@@ -1,0 +1,194 @@
+.app-shell {
+  min-height: 100svh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: #ffffff;
+  color: #172026;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e5edf1;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: max-content;
+  margin-right: 6px;
+  color: #16252d;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.brand svg {
+  width: 19px;
+  height: 19px;
+  color: #158f91;
+  stroke-width: 2.2;
+}
+
+.formula-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid #d7e3e8;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.formula-control span {
+  color: #62727b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.formula-control input {
+  width: min(19vw, 180px);
+  min-width: 88px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #172026;
+  font: 500 14px/1.2 var(--mono);
+}
+
+select,
+button {
+  font: inherit;
+}
+
+select {
+  height: 34px;
+  padding: 0 30px 0 10px;
+  border: 1px solid #d7e3e8;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #24323a;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid #d7e3e8;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #1f3038;
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: #9fc9cc;
+  background: #f3fbfb;
+}
+
+.icon-button:disabled {
+  color: #aab5ba;
+  cursor: default;
+}
+
+.icon-button svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.1;
+}
+
+.visualization {
+  position: relative;
+  min-height: 0;
+  padding: 18px;
+}
+
+.visualization canvas {
+  display: block;
+  width: 100%;
+  height: calc(100svh - 88px);
+  min-height: 520px;
+  border: 1px solid #dfe9ed;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 60px rgba(21, 44, 56, 0.08);
+}
+
+.lesson-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 3;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid #d7e3e8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 44px rgba(21, 44, 56, 0.14);
+  backdrop-filter: blur(14px);
+}
+
+.lesson-bar span {
+  min-width: 142px;
+  color: #31434c;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    grid-template-rows: auto 1fr;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    padding: 10px;
+  }
+
+  .brand {
+    width: 100%;
+  }
+
+  .formula-control {
+    flex: 1 1 calc(50% - 5px);
+  }
+
+  .formula-control input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  select {
+    flex: 1 1 auto;
+  }
+
+  .visualization {
+    padding: 10px;
+  }
+
+  .visualization canvas {
+    height: calc(100svh - 150px);
+    min-height: 430px;
+  }
+
+  .lesson-bar {
+    bottom: 12px;
+  }
+}
