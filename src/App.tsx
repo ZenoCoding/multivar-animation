@@ -21,13 +21,19 @@ import './App.css'
 type Vector = { x: number; y: number }
 type Field = (x: number, y: number, t: number) => Vector
 type ColorMode = 'flow' | 'speed' | 'angle'
-type SeedingMode = 'uniform' | 'divergence'
+type SeedingMode = 'uniform' | 'divergence' | 'particle'
 type Tracer = {
   id: number
   seedIndex: number
   age: number
   maxAge: number
   points: Vector[]
+  hueOffset: number
+}
+type Particle = {
+  id: number
+  x: number
+  y: number
   hueOffset: number
 }
 type ProbeState = {
@@ -130,9 +136,14 @@ const generatedColorModes: ColorMode[] = ['flow', 'speed', 'angle']
 const visibleHalfRange = 4.1
 const simulationPadding = 0.9
 const simulationHalfRange = visibleHalfRange + simulationPadding
+const uniformLineSeedHalfRange = visibleHalfRange * 0.98
 const densityMin = 40
 const densityMax = 160
 const densityStep = 10
+const uniformLineDropProbability = 0.006
+const particleDropProbability = 0.009
+const particleIntegrationStep = 0.012
+const particleFadeAlpha = 0.075
 
 function pick<T>(items: readonly T[]) {
   return items[Math.floor(Math.random() * items.length)]
@@ -242,8 +253,24 @@ function clampDensity(value: number) {
   return Math.min(densityMax, Math.max(densityMin, snapped))
 }
 
-function lineCountForWidth(width: number, density: number) {
-  const baseCount = width < 720 ? 240 : 460
+function lineCountForWidth(
+  width: number,
+  density: number,
+  seedingMode: SeedingMode,
+) {
+  const baseCount =
+    seedingMode === 'uniform'
+      ? width < 720
+        ? 380
+        : 760
+      : width < 720
+        ? 240
+        : 460
+  return Math.round(baseCount * (density / 100))
+}
+
+function particleCountForWidth(width: number, density: number) {
+  const baseCount = width < 720 ? 3200 : 8200
   return Math.round(baseCount * (density / 100))
 }
 
@@ -282,6 +309,13 @@ function clampMagnitude(vector: Vector) {
   return { x: vector.x * scale, y: vector.y * scale }
 }
 
+function clampParticleVelocity(vector: Vector) {
+  const magnitude = Math.hypot(vector.x, vector.y)
+  if (!Number.isFinite(magnitude) || magnitude < 0.0001) return { x: 0, y: 0 }
+  const scale = Math.min(20, magnitude) / magnitude
+  return { x: vector.x * scale, y: vector.y * scale }
+}
+
 function halton(index: number, base: number) {
   let result = 0
   let fraction = 1 / base
@@ -305,6 +339,41 @@ function makeSeed(index: number, aspect: number) {
     x: (u - 0.5) * simulationHalfRange * 2 * aspect * edgeBias,
     y: (v - 0.5) * simulationHalfRange * 2 * edgeBias,
   }
+}
+
+function makeUniformSeed(seedIndex: number, aspect: number) {
+  if (seedIndex < 64) {
+    const u = (halton(seedIndex + 1, 2) + 0.17) % 1
+    const v = (halton(seedIndex + 1, 3) + 0.31) % 1
+
+    return {
+      x: (u - 0.5) * uniformLineSeedHalfRange * 2 * aspect,
+      y: (v - 0.5) * uniformLineSeedHalfRange * 2,
+    }
+  }
+
+  return makeRandomPoint(aspect, uniformLineSeedHalfRange)
+}
+
+function makeRandomPoint(aspect: number, halfRange = simulationHalfRange) {
+  return {
+    x: (Math.random() - 0.5) * halfRange * 2 * aspect,
+    y: (Math.random() - 0.5) * halfRange * 2,
+  }
+}
+
+function makeParticle(id: number, aspect: number): Particle {
+  const point = makeRandomPoint(aspect)
+  return {
+    id,
+    x: point.x,
+    y: point.y,
+    hueOffset: (id * 137.508) % 360,
+  }
+}
+
+function resetParticles(count: number, aspect: number) {
+  return Array.from({ length: count }, (_, index) => makeParticle(index, aspect))
 }
 
 function calculateDivergence(field: Field, point: Vector, t: number) {
@@ -352,10 +421,12 @@ function makeTracer(
   maxInitialPoints = Number.POSITIVE_INFINITY,
   initialAge = warmupSteps * 0.045,
 ): Tracer {
+  const isInside =
+    seedingMode === 'uniform' ? isInUniformLineDomain : isInDomain
   let head =
     seedingMode === 'divergence'
       ? makeDivergenceSeed(seedIndex, aspect, field, t)
-      : makeSeed(seedIndex, aspect)
+      : makeUniformSeed(seedIndex, aspect)
 
   for (let i = 0; i < warmupSteps; i += 1) {
     const vector = clampMagnitude(field(head.x, head.y, t))
@@ -364,7 +435,7 @@ function makeTracer(
       y: head.y + vector.y * 0.052,
     }
 
-    if (!isInDomain(next, aspect) || Math.hypot(vector.x, vector.y) < 0.0001) {
+    if (!isInside(next, aspect) || Math.hypot(vector.x, vector.y) < 0.0001) {
       break
     }
 
@@ -373,7 +444,10 @@ function makeTracer(
 
   const seedVector = field(head.x, head.y, t)
   const speed = Math.hypot(seedVector.x, seedVector.y)
-  const targetLength = Math.round(8 + Math.min(20, speed * 8))
+  const targetLength =
+    seedingMode === 'uniform'
+      ? Math.round(12 + Math.min(28, speed * 10))
+      : Math.round(8 + Math.min(20, speed * 8))
   const initialLength = Math.max(2, Math.min(targetLength, maxInitialPoints))
   const points = [head]
   let tail = head
@@ -385,7 +459,7 @@ function makeTracer(
       y: tail.y - vector.y * 0.055,
     }
 
-    if (!isInDomain(nextTail, aspect)) break
+    if (!isInside(nextTail, aspect)) break
     points.unshift(nextTail)
     tail = nextTail
   }
@@ -402,8 +476,18 @@ function makeTracer(
 
 function resetTracers(count: number, aspect: number, field: Field, t: number) {
   return Array.from({ length: count }, (_, index) => {
-    const warmupSteps = (index * 17) % 74
-    return makeTracer(index, index, aspect, field, t, 'uniform', warmupSteps)
+    const initialAge = ((Math.sin(index * 78.233) + 1) / 2) * 4.2
+    return makeTracer(
+      index,
+      index,
+      aspect,
+      field,
+      t,
+      'uniform',
+      0,
+      22,
+      initialAge,
+    )
   })
 }
 
@@ -435,6 +519,10 @@ function isInDomain(point: Vector, aspect: number) {
     point.y > -simulationHalfRange &&
     point.y < simulationHalfRange
   )
+}
+
+function isInUniformLineDomain(point: Vector, aspect: number) {
+  return isInDomain(point, aspect)
 }
 
 function getCanvasTransform(canvas: HTMLCanvasElement) {
@@ -470,6 +558,24 @@ function calculateCurl(field: Field, point: Vector, t: number) {
   return (qRight - qLeft) / (2 * h) - (pUp - pDown) / (2 * h)
 }
 
+function rungeKuttaStep(field: Field, point: Vector, t: number, h: number) {
+  const k1 = clampParticleVelocity(field(point.x, point.y, t))
+  const k2 = clampParticleVelocity(
+    field(point.x + k1.x * h * 0.5, point.y + k1.y * h * 0.5, t),
+  )
+  const k3 = clampParticleVelocity(
+    field(point.x + k2.x * h * 0.5, point.y + k2.y * h * 0.5, t),
+  )
+  const k4 = clampParticleVelocity(
+    field(point.x + k3.x * h, point.y + k3.y * h, t),
+  )
+
+  return {
+    x: point.x + (k1.x + k2.x * 2 + k3.x * 2 + k4.x) * (h / 6),
+    y: point.y + (k1.y + k2.y * 2 + k3.y * 2 + k4.y) * (h / 6),
+  }
+}
+
 function CurlProbeIcon({ framed = true }: { framed?: boolean }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="curl-tool-icon">
@@ -502,6 +608,27 @@ function getLineColor(
   return `hsla(${hue}, 78%, 45%, 0.64)`
 }
 
+function getParticleColor(
+  mode: ColorMode,
+  vector: Vector,
+  speed: number,
+  particle: Particle,
+  lessonIndex: number,
+) {
+  if (mode === 'speed') {
+    const hue = 188 - Math.min(150, speed * 32)
+    return `hsla(${hue}, 88%, 53%, 0.9)`
+  }
+
+  if (mode === 'angle') {
+    const hue = ((Math.atan2(vector.y, vector.x) * 180) / Math.PI + 360) % 360
+    return `hsla(${hue}, 92%, 56%, 0.92)`
+  }
+
+  const hue = (185 + particle.hueOffset * 0.08 + lessonIndex * 14) % 360
+  return `hsla(${hue}, 68%, 55%, 0.88)`
+}
+
 function drawPath(
   context: CanvasRenderingContext2D,
   points: Vector[],
@@ -524,6 +651,156 @@ function drawPath(
   })
 }
 
+function drawGrid(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  originX: number,
+  originY: number,
+  scale: number,
+  alpha = 1,
+) {
+  context.lineWidth = 1
+  context.strokeStyle = `rgba(232, 238, 242, ${alpha})`
+  for (let x = originX % scale; x < width; x += scale) {
+    context.beginPath()
+    context.moveTo(x, 0)
+    context.lineTo(x, height)
+    context.stroke()
+  }
+  for (let y = originY % scale; y < height; y += scale) {
+    context.beginPath()
+    context.moveTo(0, y)
+    context.lineTo(width, y)
+    context.stroke()
+  }
+
+  context.strokeStyle = `rgba(207, 219, 226, ${alpha})`
+  context.beginPath()
+  context.moveTo(0, originY)
+  context.lineTo(width, originY)
+  context.moveTo(originX, 0)
+  context.lineTo(originX, height)
+  context.stroke()
+}
+
+function prepareCanvas(canvas: HTMLCanvasElement) {
+  const context = canvas.getContext('2d')
+  if (!context) return null
+
+  const rect = canvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  const nextWidth = Math.max(1, Math.floor(rect.width * dpr))
+  const nextHeight = Math.max(1, Math.floor(rect.height * dpr))
+  const resized = canvas.width !== nextWidth || canvas.height !== nextHeight
+
+  if (resized) {
+    canvas.width = nextWidth
+    canvas.height = nextHeight
+  }
+  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+  const width = rect.width
+  const height = rect.height
+  const scale = Math.min(width, height) / 8.2
+  const originX = width / 2
+  const originY = height / 2
+
+  const toScreen = (point: Vector) => ({
+    x: originX + point.x * scale,
+    y: originY - point.y * scale,
+  })
+
+  return { context, width, height, scale, originX, originY, toScreen, resized }
+}
+
+function drawParticleField(
+  canvas: HTMLCanvasElement,
+  field: Field,
+  colorMode: ColorMode,
+  lineDensity: number,
+  time: number,
+  lessonIndex: number,
+  particles: Particle[],
+  deltaSeconds: number,
+) {
+  const prepared = prepareCanvas(canvas)
+  if (!prepared) return
+
+  const { context, width, height, scale, originX, originY, toScreen, resized } =
+    prepared
+  const aspect = width / height
+  const particleCount = particleCountForWidth(width, lineDensity)
+  const t = time / 1000
+  const shouldReset = resized || particles.length !== particleCount
+
+  if (shouldReset) {
+    particles.splice(0, particles.length, ...resetParticles(particleCount, aspect))
+  }
+
+  if (shouldReset) {
+    context.clearRect(0, 0, width, height)
+    context.fillStyle = '#ffffff'
+  } else {
+    context.fillStyle = `rgba(255, 255, 255, ${particleFadeAlpha})`
+  }
+  context.fillRect(0, 0, width, height)
+  drawGrid(context, width, height, originX, originY, scale, 0.32)
+
+  const frameScale = Math.min(3, Math.max(0, deltaSeconds * 60))
+  const h = particleIntegrationStep * Math.max(0.25, frameScale || 1)
+  const dropChance = Math.min(0.22, particleDropProbability * Math.max(1, frameScale))
+  const particleSize = width < 720 ? 1.2 : 1.05
+
+  context.globalCompositeOperation = 'source-over'
+  for (const particle of particles) {
+    const point = { x: particle.x, y: particle.y }
+
+    if (isInDomain(point, aspect)) {
+      const vector = field(point.x, point.y, t)
+      const speed = Math.hypot(vector.x, vector.y)
+      const screen = toScreen(point)
+
+      if (
+        screen.x >= -2 &&
+        screen.x <= width + 2 &&
+        screen.y >= -2 &&
+        screen.y <= height + 2
+      ) {
+        context.fillStyle = getParticleColor(
+          colorMode,
+          vector,
+          speed,
+          particle,
+          lessonIndex,
+        )
+        context.fillRect(screen.x, screen.y, particleSize, particleSize)
+      }
+    }
+
+    if (deltaSeconds <= 0) continue
+
+    if (!isInDomain(point, aspect) || Math.random() < dropChance) {
+      const fresh = makeParticle(particle.id, aspect)
+      particle.x = fresh.x
+      particle.y = fresh.y
+      particle.hueOffset = fresh.hueOffset
+      continue
+    }
+
+    const next = rungeKuttaStep(field, point, t, h)
+    if (isInDomain(next, aspect)) {
+      particle.x = next.x
+      particle.y = next.y
+    } else {
+      const fresh = makeParticle(particle.id, aspect)
+      particle.x = fresh.x
+      particle.y = fresh.y
+      particle.hueOffset = fresh.hueOffset
+    }
+  }
+}
+
 function drawVectorField(
   canvas: HTMLCanvasElement,
   field: Field,
@@ -533,8 +810,23 @@ function drawVectorField(
   time: number,
   lessonIndex: number,
   tracers: Tracer[],
+  particles: Particle[],
   deltaSeconds: number,
 ) {
+  if (seedingMode === 'particle') {
+    drawParticleField(
+      canvas,
+      field,
+      colorMode,
+      lineDensity,
+      time,
+      lessonIndex,
+      particles,
+      deltaSeconds,
+    )
+    return
+  }
+
   const context = canvas.getContext('2d')
   if (!context) return
 
@@ -564,30 +856,9 @@ function drawVectorField(
   context.fillStyle = '#ffffff'
   context.fillRect(0, 0, width, height)
 
-  context.lineWidth = 1
-  context.strokeStyle = '#e8eef2'
-  for (let x = originX % scale; x < width; x += scale) {
-    context.beginPath()
-    context.moveTo(x, 0)
-    context.lineTo(x, height)
-    context.stroke()
-  }
-  for (let y = originY % scale; y < height; y += scale) {
-    context.beginPath()
-    context.moveTo(0, y)
-    context.lineTo(width, y)
-    context.stroke()
-  }
+  drawGrid(context, width, height, originX, originY, scale)
 
-  context.strokeStyle = '#cfdbe2'
-  context.beginPath()
-  context.moveTo(0, originY)
-  context.lineTo(width, originY)
-  context.moveTo(originX, 0)
-  context.lineTo(originX, height)
-  context.stroke()
-
-  const lineCount = lineCountForWidth(width, lineDensity)
+  const lineCount = lineCountForWidth(width, lineDensity, seedingMode)
   const t = time / 1000
   if (tracers.length !== lineCount) {
     tracers.splice(
@@ -622,8 +893,19 @@ function drawVectorField(
         y: head.y + vector.y * stepSeconds * 1.85,
       }
 
+      const frameScale = stepSeconds / (1 / 60)
+      const randomDrop =
+        seedingMode === 'uniform' &&
+        Math.random() <
+          Math.min(0.035, uniformLineDropProbability * frameScale)
+      const nextInDomain =
+        seedingMode === 'uniform'
+          ? isInUniformLineDomain(next, aspect)
+          : isInDomain(next, aspect)
+
       if (
-        isInDomain(next, aspect) &&
+        !randomDrop &&
+        nextInDomain &&
         Math.hypot(vector.x, vector.y) > 0.0001 &&
         tracer.age < tracer.maxAge
       ) {
@@ -636,8 +918,10 @@ function drawVectorField(
           field,
           t,
           seedingMode,
-          (tracer.id * 11 + Math.floor(time * 0.02)) % 38,
-          seedingMode === 'divergence' ? 3 : 4,
+          seedingMode === 'uniform'
+            ? 0
+            : (tracer.id * 11 + Math.floor(time * 0.02)) % 38,
+          seedingMode === 'uniform' ? 22 : 3,
           0,
         )
         tracer.seedIndex = fresh.seedIndex
@@ -647,7 +931,10 @@ function drawVectorField(
       }
     }
 
-    const targetLength = Math.round(7 + Math.min(20, speed * 8))
+    const targetLength =
+      seedingMode === 'uniform'
+        ? Math.round(12 + Math.min(28, speed * 10))
+        : Math.round(7 + Math.min(20, speed * 8))
     while (tracer.points.length > targetLength) tracer.points.shift()
 
     if (tracer.points.length < 2) continue
@@ -915,6 +1202,7 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const visualizationRef = useRef<HTMLElement | null>(null)
   const tracersRef = useRef<Tracer[]>([])
+  const particlesRef = useRef<Particle[]>([])
   const lastFrameTimeRef = useRef<number | null>(null)
   const [dx, setDx] = useState(presets[0].dx)
   const [dy, setDy] = useState(presets[0].dy)
@@ -950,6 +1238,7 @@ function App() {
           time,
           lessonIndex,
           tracersRef.current,
+          particlesRef.current,
           deltaSeconds,
         )
       }
@@ -959,6 +1248,7 @@ function App() {
 
   useEffect(() => {
     tracersRef.current = []
+    particlesRef.current = []
     lastFrameTimeRef.current = null
   }, [field, lineDensity, seedingMode])
 
@@ -969,6 +1259,7 @@ function App() {
     setColorMode(next.colorMode ?? pick(generatedColorModes))
     setProbe((current) => ({ ...current, visible: false }))
     tracersRef.current = []
+    particlesRef.current = []
     lastFrameTimeRef.current = null
   }, [])
 
@@ -985,6 +1276,7 @@ function App() {
 
     const handleResize = () => {
       tracersRef.current = []
+      particlesRef.current = []
       redraw()
     }
 
@@ -1037,6 +1329,7 @@ function App() {
 
   const resetFlow = () => {
     tracersRef.current = []
+    particlesRef.current = []
     lastFrameTimeRef.current = null
     redraw(performance.now(), 0.035)
   }
@@ -1133,6 +1426,13 @@ function App() {
             onClick={() => setSeedingMode('divergence')}
           >
             Divergence
+          </button>
+          <button
+            type="button"
+            aria-pressed={seedingMode === 'particle'}
+            onClick={() => setSeedingMode('particle')}
+          >
+            Particle
           </button>
         </div>
 

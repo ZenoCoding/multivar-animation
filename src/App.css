@@ -41,6 +41,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  flex: 1 1 126px;
   min-width: 0;
   height: 34px;
   padding: 0 9px;
@@ -56,8 +57,8 @@
 }
 
 .formula-control input {
-  width: min(19vw, 180px);
-  min-width: 88px;
+  width: 100%;
+  min-width: 56px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -201,9 +202,9 @@ select {
   height: 38px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: 0 0 auto;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid #d7e3e8;
   border-radius: 8px;
   background: #ffffff;
@@ -212,9 +213,9 @@ select {
 .density-slider {
   --density-x: 50%;
   position: relative;
-  width: 156px;
+  width: 128px;
   height: 28px;
-  flex: 0 0 156px;
+  flex: 0 0 128px;
   cursor: ew-resize;
   touch-action: none;
 }
