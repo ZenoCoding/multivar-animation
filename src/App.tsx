@@ -10,6 +10,7 @@ import {
   Check,
   ChevronDown,
   Dices,
+  Navigation2,
   Pause,
   Play,
   RotateCcw,
@@ -576,12 +577,28 @@ function rungeKuttaStep(field: Field, point: Vector, t: number, h: number) {
   }
 }
 
-function CurlProbeIcon({ framed = true }: { framed?: boolean }) {
+function CurlProbeIcon({
+  framed = true,
+  mirrored = false,
+}: {
+  framed?: boolean
+  mirrored?: boolean
+}) {
+  const glyph = (
+    <>
+      <path d="M15.8 8.2a5.1 5.1 0 1 0 1.3 5.3" />
+      <path d="M16.2 5.7v3.1h-3.1" />
+    </>
+  )
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="curl-tool-icon">
       {framed ? <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" /> : null}
-      <path d="M15.8 8.2a5.1 5.1 0 1 0 1.3 5.3" />
-      <path d="M16.2 5.7v3.1h-3.1" />
+      {mirrored ? (
+        <g transform="translate(24 0) scale(-1 1)">{glyph}</g>
+      ) : (
+        glyph
+      )}
     </svg>
   )
 }
@@ -723,6 +740,7 @@ function drawParticleField(
   lessonIndex: number,
   particles: Particle[],
   deltaSeconds: number,
+  showFieldArrows: boolean,
 ) {
   const prepared = prepareCanvas(canvas)
   if (!prepared) return
@@ -799,6 +817,58 @@ function drawParticleField(
       particle.hueOffset = fresh.hueOffset
     }
   }
+
+  if (showFieldArrows) {
+    drawFieldArrows(context, width, height, originX, originY, scale, field, t)
+  }
+}
+
+function drawFieldArrows(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  originX: number,
+  originY: number,
+  scale: number,
+  field: Field,
+  t: number,
+) {
+  const arrowStep = width < 720 ? 92 : 104
+  context.lineWidth = 1.6
+  context.strokeStyle = '#23313a'
+  context.fillStyle = '#23313a'
+  for (let sx = arrowStep / 2; sx < width; sx += arrowStep) {
+    for (let sy = arrowStep / 2; sy < height; sy += arrowStep) {
+      const x = (sx - originX) / scale
+      const y = (originY - sy) / scale
+      const vector = field(x, y, t)
+      const magnitude = Math.hypot(vector.x, vector.y)
+      if (magnitude < 0.001) continue
+
+      const length = Math.min(25, 12 + magnitude * 8)
+      const angle = Math.atan2(-vector.y, vector.x)
+      const ex = sx + Math.cos(angle) * length
+      const ey = sy + Math.sin(angle) * length
+
+      context.beginPath()
+      context.moveTo(sx, sy)
+      context.lineTo(ex, ey)
+      context.stroke()
+
+      context.beginPath()
+      context.moveTo(ex, ey)
+      context.lineTo(
+        ex - Math.cos(angle - 0.56) * 7,
+        ey - Math.sin(angle - 0.56) * 7,
+      )
+      context.lineTo(
+        ex - Math.cos(angle + 0.56) * 7,
+        ey - Math.sin(angle + 0.56) * 7,
+      )
+      context.closePath()
+      context.fill()
+    }
+  }
 }
 
 function drawVectorField(
@@ -812,6 +882,7 @@ function drawVectorField(
   tracers: Tracer[],
   particles: Particle[],
   deltaSeconds: number,
+  showFieldArrows: boolean,
 ) {
   if (seedingMode === 'particle') {
     drawParticleField(
@@ -823,6 +894,7 @@ function drawVectorField(
       lessonIndex,
       particles,
       deltaSeconds,
+      showFieldArrows,
     )
     return
   }
@@ -954,41 +1026,8 @@ function drawVectorField(
     context.stroke()
   }
 
-  const arrowStep = width < 720 ? 92 : 104
-  context.lineWidth = 1.6
-  context.strokeStyle = '#23313a'
-  context.fillStyle = '#23313a'
-  for (let sx = arrowStep / 2; sx < width; sx += arrowStep) {
-    for (let sy = arrowStep / 2; sy < height; sy += arrowStep) {
-      const x = (sx - originX) / scale
-      const y = (originY - sy) / scale
-      const vector = field(x, y, t)
-      const magnitude = Math.hypot(vector.x, vector.y)
-      if (magnitude < 0.001) continue
-
-      const length = Math.min(25, 12 + magnitude * 8)
-      const angle = Math.atan2(-vector.y, vector.x)
-      const ex = sx + Math.cos(angle) * length
-      const ey = sy + Math.sin(angle) * length
-
-      context.beginPath()
-      context.moveTo(sx, sy)
-      context.lineTo(ex, ey)
-      context.stroke()
-
-      context.beginPath()
-      context.moveTo(ex, ey)
-      context.lineTo(
-        ex - Math.cos(angle - 0.56) * 7,
-        ey - Math.sin(angle - 0.56) * 7,
-      )
-      context.lineTo(
-        ex - Math.cos(angle + 0.56) * 7,
-        ey - Math.sin(angle + 0.56) * 7,
-      )
-      context.closePath()
-      context.fill()
-    }
+  if (showFieldArrows) {
+    drawFieldArrows(context, width, height, originX, originY, scale, field, t)
   }
 }
 
@@ -1211,6 +1250,7 @@ function App() {
   const [lineDensity, setLineDensity] = useState(100)
   const [isPlaying, setIsPlaying] = useState(true)
   const [autoRandomize, setAutoRandomize] = useState(false)
+  const [showFieldArrows, setShowFieldArrows] = useState(true)
   const [lessonIndex, setLessonIndex] = useState(0)
   const [probeEnabled, setProbeEnabled] = useState(false)
   const [probe, setProbe] = useState<ProbeState>({
@@ -1240,10 +1280,11 @@ function App() {
           tracersRef.current,
           particlesRef.current,
           deltaSeconds,
+          showFieldArrows,
         )
       }
     },
-    [colorMode, field, lessonIndex, lineDensity, seedingMode],
+    [colorMode, field, lessonIndex, lineDensity, seedingMode, showFieldArrows],
   )
 
   useEffect(() => {
@@ -1367,7 +1408,7 @@ function App() {
     left: `${probe.x}px`,
     top: `${probe.y}px`,
     '--probe-duration': `${Math.max(0.28, 1.7 / (0.25 + probeMagnitude))}s`,
-    '--probe-direction': probe.curl >= 0 ? 'normal' : 'reverse',
+    '--probe-direction': probe.curl >= 0 ? 'reverse' : 'normal',
     '--probe-intensity': probeIntensity,
     '--probe-hue': probe.curl >= 0 ? 181 : 23,
   } as CSSProperties
@@ -1442,6 +1483,17 @@ function App() {
           {isPlaying ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
         </button>
 
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => setShowFieldArrows((value) => !value)}
+          aria-label={showFieldArrows ? 'Hide field arrows' : 'Show field arrows'}
+          aria-pressed={showFieldArrows}
+          title="Field arrows"
+        >
+          <Navigation2 aria-hidden="true" />
+        </button>
+
         <button type="button" className="icon-button" onClick={randomizeField} aria-label="Randomize field" title="Randomize field">
           <Dices aria-hidden="true" />
         </button>
@@ -1498,7 +1550,7 @@ function App() {
             data-curl={probeLabel}
             aria-hidden="true"
           >
-            <CurlProbeIcon framed={false} />
+            <CurlProbeIcon framed={false} mirrored={probe.curl >= 0} />
           </div>
         ) : null}
       </section>
