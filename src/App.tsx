@@ -3,17 +3,22 @@ import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent,
+  ReactNode,
 } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
+  ChevronUp,
   Dices,
+  ListChecks,
+  Minus,
   Navigation2,
   Pause,
   Play,
   RotateCcw,
+  RotateCw,
   Sparkles,
   Waves,
 } from 'lucide-react'
@@ -29,19 +34,58 @@ type Tracer = {
   age: number
   maxAge: number
   points: Vector[]
-  hueOffset: number
 }
 type Particle = {
   id: number
   x: number
   y: number
-  hueOffset: number
 }
 type ProbeState = {
   x: number
   y: number
   curl: number
+  divergence: number
   visible: boolean
+}
+
+type LabPhase = 'predict' | 'investigate' | 'explain'
+type LabPanelMode = 'intro' | 'question' | 'concept' | 'menu'
+type LessonKind = 'curl' | 'divergence' | 'compare'
+type ProbeMetric = 'curl' | 'divergence' | 'both'
+
+type Marker = {
+  label: string
+  x: number
+  y: number
+}
+
+type MarkerPosition = Marker & {
+  curl: number
+  divergence: number
+  left: number
+  top: number
+}
+
+type LabQuestion = {
+  lessonKind: LessonKind
+  metric: ProbeMetric
+  title: string
+  field: {
+    dx: string
+    dy: string
+  }
+  markers: Marker[]
+  prompt: string
+  options: string[]
+  answer: string
+  explanation: string
+  revealedInsight: string
+}
+
+type AnswerRecord = {
+  selectedOption: string
+  submitted: boolean
+  correct: boolean
 }
 
 type Preset = {
@@ -104,11 +148,222 @@ const randomPresets: Preset[] = [
   },
 ]
 
-const lessons = [
-  'Explore direction',
-  'Notice local spin',
-  'Compare divergence',
-  'Trace a path',
+type LessonSection = {
+  kind: 'intro' | LessonKind
+  title: string
+  shortTitle: string
+}
+
+const labTitle = 'Local Vector Labs'
+
+const lessonSections: LessonSection[] = [
+  { kind: 'intro', title: 'Local Measurements', shortTitle: 'Intro' },
+  { kind: 'curl', title: 'Curl Probe Lab', shortTitle: 'Curl' },
+  { kind: 'divergence', title: 'Divergence Probe Lab', shortTitle: 'Divergence' },
+  {
+    kind: 'compare',
+    title: 'Compare Curl and Divergence',
+    shortTitle: 'Compare',
+  },
+]
+
+const labQuestions: LabQuestion[] = [
+  {
+    lessonKind: 'curl',
+    metric: 'curl',
+    title: 'Point A',
+    field: { dx: '-y', dy: 'x' },
+    markers: [{ label: 'A', x: 0, y: 0 }],
+    prompt: 'What is the curl at point A?',
+    options: ['-2', '0', '2', 'It changes by location'],
+    answer: '2',
+    explanation:
+      'A tiny paddle wheel placed at A would spin counterclockwise at a steady rate. The local turning is strong and positive, even though the particle at the center barely moves.',
+    revealedInsight: 'This field turns every small paddle wheel counterclockwise.',
+  },
+  {
+    lessonKind: 'curl',
+    metric: 'curl',
+    title: 'Compare A-D',
+    field: { dx: '-y', dy: 'x' },
+    markers: [
+      { label: 'A', x: -2.2, y: 1.8 },
+      { label: 'B', x: 2.2, y: 1.8 },
+      { label: 'C', x: -2.2, y: -1.8 },
+      { label: 'D', x: 2.2, y: -1.8 },
+    ],
+    prompt: 'Rank the curl at A, B, C, and D.',
+    options: [
+      'A = B = C = D',
+      'A and C are largest',
+      'B and D are largest',
+      'Center is largest',
+    ],
+    answer: 'A = B = C = D',
+    explanation:
+      'The arrows form larger circles farther out, but a tiny paddle wheel feels the same local twist at each marked point. Curl measures that local twist, not how large the orbit looks.',
+    revealedInsight: 'The visible circles get larger, but the local spin stays even.',
+  },
+  {
+    lessonKind: 'curl',
+    metric: 'curl',
+    title: 'Sliding rows',
+    field: { dx: 'y', dy: '0' },
+    markers: [
+      { label: 'A', x: -1.5, y: 1.7 },
+      { label: 'B', x: 1.5, y: -1.7 },
+    ],
+    prompt: 'What sign is the curl?',
+    options: ['Positive', 'Negative', 'Zero', 'Cannot tell'],
+    answer: 'Negative',
+    explanation:
+      'The upper part of a tiny paddle wheel gets pushed right while the lower part gets pushed left. That twist makes the wheel turn clockwise, so the curl is negative.',
+    revealedInsight: 'A sliding field can spin a tiny paddle wheel without forming circles.',
+  },
+  {
+    lessonKind: 'curl',
+    metric: 'curl',
+    title: 'Stretch and squeeze',
+    field: { dx: 'x', dy: '-y' },
+    markers: [
+      { label: 'A', x: 0, y: 0 },
+      { label: 'B', x: -2.1, y: 1.4 },
+      { label: 'C', x: 2.1, y: -1.4 },
+    ],
+    prompt: 'What is the curl at these points?',
+    options: ['Positive', 'Negative', 'Zero', 'Changes sign'],
+    answer: 'Zero',
+    explanation:
+      'A small shape would stretch horizontally and squeeze vertically, but opposite sides do not make it turn. Deformation alone is not curl; curl needs local spinning.',
+    revealedInsight: 'Stretching can be dramatic while local spin remains zero.',
+  },
+  {
+    lessonKind: 'divergence',
+    metric: 'divergence',
+    title: 'Source',
+    field: { dx: 'x', dy: 'y' },
+    markers: [{ label: 'A', x: 0.8, y: 0.5 }],
+    prompt: 'What happens to a tiny blob placed at A?',
+    options: [
+      'It expands',
+      'It contracts',
+      'Its area stays about the same',
+      'Cannot tell',
+    ],
+    answer: 'It expands',
+    explanation:
+      'The nearby arrows carry every edge of the blob outward. The blob would grow in area, so the divergence is positive.',
+    revealedInsight: 'The probe blob expands when local flow spreads outward.',
+  },
+  {
+    lessonKind: 'divergence',
+    metric: 'divergence',
+    title: 'Sink',
+    field: { dx: '-x', dy: '-y' },
+    markers: [{ label: 'A', x: -0.8, y: 0.55 }],
+    prompt: 'What happens to a tiny blob placed at A?',
+    options: [
+      'It expands',
+      'It contracts',
+      'Its area stays about the same',
+      'Cannot tell',
+    ],
+    answer: 'It contracts',
+    explanation:
+      'The nearby arrows carry the blob edges inward from all sides. The blob would shrink in area, so the divergence is negative.',
+    revealedInsight: 'The probe blob contracts when local flow piles inward.',
+  },
+  {
+    lessonKind: 'divergence',
+    metric: 'divergence',
+    title: 'Stretch and squeeze',
+    field: { dx: 'x', dy: '-y' },
+    markers: [
+      { label: 'A', x: 0, y: 0 },
+      { label: 'B', x: -1.8, y: 1.2 },
+      { label: 'C', x: 1.8, y: -1.2 },
+    ],
+    prompt: 'What is the divergence at these points?',
+    options: ['Positive', 'Negative', 'Zero', 'Changes sign'],
+    answer: 'Zero',
+    explanation:
+      'A tiny blob stretches horizontally and squeezes vertically. The shape changes, but the area gain and area loss balance out.',
+    revealedInsight: 'Divergence checks area change, not whether the shape deforms.',
+  },
+  {
+    lessonKind: 'divergence',
+    metric: 'divergence',
+    title: 'Spin without spreading',
+    field: { dx: '-y', dy: 'x' },
+    markers: [
+      { label: 'A', x: -2.1, y: 1.4 },
+      { label: 'B', x: 2.1, y: 1.4 },
+      { label: 'C', x: 0, y: -1.8 },
+    ],
+    prompt: 'What is the divergence in this rotating field?',
+    options: [
+      'Positive everywhere',
+      'Negative everywhere',
+      'Zero everywhere',
+      'Largest at the center',
+    ],
+    answer: 'Zero everywhere',
+    explanation:
+      'A tiny blob would turn around, but it would not locally grow or shrink. Spin is not the same thing as spreading out.',
+    revealedInsight: 'The wheel spins here, but the blob keeps the same area.',
+  },
+  {
+    lessonKind: 'compare',
+    metric: 'both',
+    title: 'Rotation field',
+    field: { dx: '-y', dy: 'x' },
+    markers: [{ label: 'A', x: 1.6, y: 1.4 }],
+    prompt: 'Which local effect is happening at A?',
+    options: ['Spin', 'Expansion', 'Compression', 'Neither'],
+    answer: 'Spin',
+    explanation:
+      'The tiny wheel turns, but the tiny blob keeps its area. This field has curl without divergence.',
+    revealedInsight: 'Compare the wheel and blob: spin can happen without spreading.',
+  },
+  {
+    lessonKind: 'compare',
+    metric: 'both',
+    title: 'Source field',
+    field: { dx: 'x', dy: 'y' },
+    markers: [{ label: 'A', x: -1.25, y: 1.15 }],
+    prompt: 'Which local effect is happening at A?',
+    options: ['Spin', 'Expansion', 'Compression', 'Neither'],
+    answer: 'Expansion',
+    explanation:
+      'The tiny blob expands while the tiny wheel does not get twisted. This field has divergence without curl.',
+    revealedInsight: 'The blob grows here, but there is no local wheel spin.',
+  },
+  {
+    lessonKind: 'compare',
+    metric: 'both',
+    title: 'Sink field',
+    field: { dx: '-x', dy: '-y' },
+    markers: [{ label: 'A', x: 1.35, y: -1.05 }],
+    prompt: 'Which local effect is happening at A?',
+    options: ['Spin', 'Expansion', 'Compression', 'Neither'],
+    answer: 'Compression',
+    explanation:
+      'The tiny blob contracts while the tiny wheel does not turn. Negative divergence means local compression.',
+    revealedInsight: 'The blob shrinks here, but the wheel does not spin.',
+  },
+  {
+    lessonKind: 'compare',
+    metric: 'both',
+    title: 'Saddle field',
+    field: { dx: 'x', dy: '-y' },
+    markers: [{ label: 'A', x: 1.4, y: 1.2 }],
+    prompt: 'Which local effect is happening at A?',
+    options: ['Spin', 'Expansion', 'Compression', 'Neither'],
+    answer: 'Neither',
+    explanation:
+      'The tiny shape stretches and squeezes, but it does not spin and its area does not change overall.',
+    revealedInsight: 'Deformation can look dramatic while curl and divergence are both zero.',
+  },
 ]
 
 const mathNames = [
@@ -369,7 +624,6 @@ function makeParticle(id: number, aspect: number): Particle {
     id,
     x: point.x,
     y: point.y,
-    hueOffset: (id * 137.508) % 360,
   }
 }
 
@@ -471,7 +725,6 @@ function makeTracer(
     age: initialAge,
     maxAge: 4.6 + ((Math.sin(id * 12.9898 + seedIndex * 0.017) + 1) * 2.4),
     points,
-    hueOffset: (id * 0.41) % 360,
   }
 }
 
@@ -603,11 +856,31 @@ function CurlProbeIcon({
   )
 }
 
+function DivergenceProbeIcon({ framed = true }: { framed?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="divergence-tool-icon">
+      {framed ? <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" /> : null}
+      <circle cx="12" cy="12" r="3.2" />
+      <circle cx="12" cy="12" r="6.2" strokeDasharray="2.4 2.4" />
+    </svg>
+  )
+}
+
+function CompareProbeIcon() {
+  return (
+    <span className="compare-tool-icon" aria-hidden="true">
+      <CurlProbeIcon framed={false} />
+      <DivergenceProbeIcon framed={false} />
+    </span>
+  )
+}
+
 function getLineColor(
   mode: ColorMode,
   vector: Vector,
   speed: number,
-  tracer: Tracer,
+  point: Vector,
+  timeSeconds: number,
   lessonIndex: number,
 ) {
   if (mode === 'speed') {
@@ -621,7 +894,7 @@ function getLineColor(
     return `hsla(${hue}, 76%, 48%, 0.64)`
   }
 
-  const hue = (178 + tracer.hueOffset + lessonIndex * 24) % 360
+  const hue = getFlowHue(point, timeSeconds, lessonIndex)
   return `hsla(${hue}, 78%, 45%, 0.64)`
 }
 
@@ -629,7 +902,8 @@ function getParticleColor(
   mode: ColorMode,
   vector: Vector,
   speed: number,
-  particle: Particle,
+  point: Vector,
+  timeSeconds: number,
   lessonIndex: number,
 ) {
   if (mode === 'speed') {
@@ -642,8 +916,19 @@ function getParticleColor(
     return `hsla(${hue}, 92%, 56%, 0.92)`
   }
 
-  const hue = (185 + particle.hueOffset * 0.08 + lessonIndex * 14) % 360
+  const hue = getFlowHue(point, timeSeconds, lessonIndex)
   return `hsla(${hue}, 68%, 55%, 0.88)`
+}
+
+function getFlowHue(point: Vector, timeSeconds: number, lessonIndex: number) {
+  const phase = point.x * 0.68 - point.y * 0.46 + timeSeconds * 0.7
+  const hue =
+    188 +
+    Math.sin(phase) * 58 +
+    Math.sin(phase * 0.47 + 1.2) * 22 +
+    lessonIndex * 14
+
+  return ((hue % 360) + 360) % 360
 }
 
 function drawPath(
@@ -789,7 +1074,8 @@ function drawParticleField(
           colorMode,
           vector,
           speed,
-          particle,
+          point,
+          t,
           lessonIndex,
         )
         context.fillRect(screen.x, screen.y, particleSize, particleSize)
@@ -802,7 +1088,6 @@ function drawParticleField(
       const fresh = makeParticle(particle.id, aspect)
       particle.x = fresh.x
       particle.y = fresh.y
-      particle.hueOffset = fresh.hueOffset
       continue
     }
 
@@ -814,7 +1099,6 @@ function drawParticleField(
       const fresh = makeParticle(particle.id, aspect)
       particle.x = fresh.x
       particle.y = fresh.y
-      particle.hueOffset = fresh.hueOffset
     }
   }
 
@@ -1015,7 +1299,8 @@ function drawVectorField(
       colorMode,
       rawVector,
       speed,
-      tracer,
+      head,
+      t,
       lessonIndex,
     )
     context.lineWidth = 1.55
@@ -1161,16 +1446,23 @@ type IntegratedMenuProps = {
   value: string
   options: IntegratedMenuOption[]
   onChange: (value: string) => void
+  disabled?: boolean
 }
 
-function IntegratedMenu({ label, value, options, onChange }: IntegratedMenuProps) {
+function IntegratedMenu({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: IntegratedMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const selectedOption =
     options.find((option) => option.value === value) ?? options[0]
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || disabled) return
 
     const handlePointerDown = (event: globalThis.PointerEvent) => {
       if (
@@ -1192,7 +1484,7 @@ function IntegratedMenu({ label, value, options, onChange }: IntegratedMenuProps
       window.removeEventListener('pointerdown', handlePointerDown)
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen])
+  }, [disabled, isOpen])
 
   return (
     <div className="integrated-menu" ref={menuRef}>
@@ -1201,13 +1493,14 @@ function IntegratedMenu({ label, value, options, onChange }: IntegratedMenuProps
         className="menu-trigger"
         aria-label={label}
         aria-haspopup="listbox"
-        aria-expanded={isOpen}
+        aria-expanded={isOpen && !disabled}
+        disabled={disabled}
         onClick={() => setIsOpen((open) => !open)}
       >
         <span>{selectedOption.label}</span>
         <ChevronDown aria-hidden="true" />
       </button>
-      {isOpen ? (
+      {isOpen && !disabled ? (
         <div className="menu-popover" role="listbox" aria-label={label}>
           {options.map((option) => {
             const selected = option.value === value
@@ -1237,6 +1530,198 @@ function IntegratedMenu({ label, value, options, onChange }: IntegratedMenuProps
   )
 }
 
+function formatMetricValue(value: number) {
+  return Math.abs(value) >= 10 ? value.toFixed(0) : value.toFixed(2)
+}
+
+function getLessonQuestions(kind: LessonKind) {
+  return labQuestions
+    .map((question, index) => ({ question, index }))
+    .filter((item) => item.question.lessonKind === kind)
+}
+
+function getLessonSection(kind: LessonKind | 'intro') {
+  return (
+    lessonSections.find((section) => section.kind === kind) ?? lessonSections[0]
+  )
+}
+
+function getQuestionOrdinal(index: number) {
+  const question = labQuestions[index]
+  const questions = getLessonQuestions(question.lessonKind)
+  const ordinal = questions.findIndex((item) => item.index === index) + 1
+  return {
+    ordinal,
+    total: questions.length,
+  }
+}
+
+function getQuestionStatusClass(record: AnswerRecord | undefined) {
+  if (!record) return 'empty'
+  if (!record.submitted) return 'progress'
+  return record.correct ? 'correct' : 'incorrect'
+}
+
+function getQuestionStatus(record: AnswerRecord | undefined) {
+  if (!record) return 'Not started'
+  if (!record.submitted) return 'In progress'
+  return record.correct ? 'Correct' : 'Incorrect'
+}
+
+function CurlConceptDiagram({
+  kind,
+  label,
+}: {
+  kind: 'positive' | 'zero' | 'negative'
+  label: string
+}) {
+  const isZero = kind === 'zero'
+  const isNegative = kind === 'negative'
+  const caption = isZero ? 'no turn' : isNegative ? 'clockwise' : 'counterclockwise'
+  const Icon = isZero ? Minus : isNegative ? RotateCw : RotateCcw
+
+  return (
+    <div className={`curl-concept-diagram curl-concept-${kind}`}>
+      <Icon className="curl-diagram-icon" aria-hidden="true" />
+      <span>
+        <strong>{label}</strong>
+        {caption}
+      </span>
+    </div>
+  )
+}
+
+function DivergenceConceptDiagram({
+  kind,
+  label,
+}: {
+  kind: 'positive' | 'zero' | 'negative'
+  label: string
+}) {
+  const caption =
+    kind === 'positive' ? 'blob expands' : kind === 'negative' ? 'blob contracts' : 'same area'
+
+  return (
+    <div className={`divergence-concept-diagram divergence-concept-${kind}`}>
+      <span className="divergence-blob-diagram" aria-hidden="true">
+        <i />
+        <i />
+      </span>
+      <span>
+        <strong>{label}</strong>
+        {caption}
+      </span>
+    </div>
+  )
+}
+
+function LocalMeasurementsIntro({ action }: { action?: ReactNode }) {
+  return (
+    <div className="lab-concept">
+      <div className="lab-concept-copy">
+        <strong>Fields have local stories.</strong>
+        <span>
+          At one point, a vector field can spin a tiny wheel, expand a tiny blob,
+          compress it, or simply carry it along. These labs teach you to predict
+          first, then test with a probe.
+        </span>
+      </div>
+      <div className="local-concept-grid" aria-label="Local measurement guide">
+        <div className="local-concept-card">
+          <CurlConceptDiagram kind="positive" label="curl" />
+          <p>Wheel test: does the nearby flow twist?</p>
+        </div>
+        <div className="local-concept-card">
+          <DivergenceConceptDiagram kind="positive" label="divergence" />
+          <p>Blob test: does the nearby flow change area?</p>
+        </div>
+      </div>
+      <p>
+        The whole pattern can be misleading. Each question asks what happens in
+        a tiny neighborhood around the marked point.
+      </p>
+      {action}
+    </div>
+  )
+}
+
+function LessonConcept({ lessonKind }: { lessonKind: LessonKind }) {
+  if (lessonKind === 'divergence') {
+    return (
+      <div className="lab-concept">
+        <div className="lab-concept-copy">
+          <strong>Divergence is local area change.</strong>
+          <span>
+            Imagine placing a tiny blob at a point. Divergence says whether the
+            nearby arrows would make that blob expand, contract, or keep about
+            the same area.
+          </span>
+        </div>
+        <div className="curl-concept-grid" aria-label="Divergence sign guide">
+          <DivergenceConceptDiagram kind="positive" label="positive" />
+          <DivergenceConceptDiagram kind="zero" label="zero" />
+          <DivergenceConceptDiagram kind="negative" label="negative" />
+        </div>
+        <p>
+          Shape change is not enough. A blob can stretch or rotate while its
+          area stays the same; divergence checks only local spreading or piling
+          up.
+        </p>
+      </div>
+    )
+  }
+
+  if (lessonKind === 'compare') {
+    return (
+      <div className="lab-concept">
+        <div className="lab-concept-copy">
+          <strong>Curl and divergence are different tests.</strong>
+          <span>
+            Use the wheel and blob together. A field can spin without spreading,
+            spread without spinning, compress, or do neither.
+          </span>
+        </div>
+        <div className="local-concept-grid" aria-label="Comparison guide">
+          <div className="local-concept-card">
+            <CurlConceptDiagram kind="positive" label="curl" />
+            <p>Wheel turns: local spin.</p>
+          </div>
+          <div className="local-concept-card">
+            <DivergenceConceptDiagram kind="negative" label="divergence" />
+            <p>Blob changes area: expansion or compression.</p>
+          </div>
+        </div>
+        <p>
+          In the checkpoint, the useful question is not “does it move?” It is
+          “which tiny test object changes?”
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="lab-concept">
+      <div className="lab-concept-copy">
+        <strong>Curl is local spin.</strong>
+        <span>
+          Imagine placing a tiny paddle wheel at a point. Curl says whether the
+          nearby arrows would twist that wheel, and which way it would turn.
+        </span>
+      </div>
+      <div className="curl-concept-grid" aria-label="Curl sign guide">
+        <CurlConceptDiagram kind="positive" label="positive" />
+        <CurlConceptDiagram kind="zero" label="zero" />
+        <CurlConceptDiagram kind="negative" label="negative" />
+      </div>
+      <p>
+        Big circular paths are not the point. A field can stretch, slide, or
+        flow in circles; the probe checks the tiny turning effect right where
+        you place it.
+      </p>
+    </div>
+  )
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const visualizationRef = useRef<HTMLElement | null>(null)
@@ -1251,14 +1736,32 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(true)
   const [autoRandomize, setAutoRandomize] = useState(false)
   const [showFieldArrows, setShowFieldArrows] = useState(true)
-  const [lessonIndex, setLessonIndex] = useState(0)
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0)
+  const [labPhase, setLabPhase] = useState<LabPhase>('predict')
+  const [panelMode, setPanelMode] = useState<LabPanelMode>('intro')
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const [hasSeenIntro, setHasSeenIntro] = useState(false)
+  const [answerRecords, setAnswerRecords] = useState<
+    Record<number, AnswerRecord>
+  >({})
+  const [nearbyMarker, setNearbyMarker] = useState<string | null>(null)
+  const [markerPositions, setMarkerPositions] = useState<MarkerPosition[]>([])
   const [probeEnabled, setProbeEnabled] = useState(false)
   const [probe, setProbe] = useState<ProbeState>({
     x: 0,
     y: 0,
     curl: 0,
+    divergence: 0,
     visible: false,
   })
+  const activeQuestion = labQuestions[activeQuestionIndex]
+  const activeLesson = getLessonSection(activeQuestion.lessonKind)
+  const activeQuestionOrdinal = getQuestionOrdinal(activeQuestionIndex)
+  const activeAnswer = answerRecords[activeQuestionIndex]
+  const selectedOption = activeAnswer?.selectedOption ?? null
+  const answerSubmitted = activeAnswer?.submitted ?? false
+  const canUseProbe = labPhase === 'predict' && selectedOption !== null
+  const canSubmit = labPhase === 'investigate' && selectedOption !== null
 
   const field = useMemo<Field>(() => {
     const fx = compileExpression(dx)
@@ -1276,7 +1779,7 @@ function App() {
           seedingMode,
           lineDensity,
           time,
-          lessonIndex,
+          activeQuestionIndex,
           tracersRef.current,
           particlesRef.current,
           deltaSeconds,
@@ -1284,8 +1787,43 @@ function App() {
         )
       }
     },
-    [colorMode, field, lessonIndex, lineDensity, seedingMode, showFieldArrows],
+    [
+      activeQuestionIndex,
+      colorMode,
+      field,
+      lineDensity,
+      seedingMode,
+      showFieldArrows,
+    ],
   )
+
+  const syncMarkerPositions = useCallback(() => {
+    if (!canvasRef.current || !visualizationRef.current) {
+      setMarkerPositions([])
+      return
+    }
+
+    const { rect, originX, originY, scale } = getCanvasTransform(
+      canvasRef.current,
+    )
+    const sectionRect = visualizationRef.current.getBoundingClientRect()
+    const t = performance.now() / 1000
+
+    setMarkerPositions(
+      activeQuestion.markers.map((marker) => ({
+        ...marker,
+        curl: calculateCurl(field, marker, t),
+        divergence: calculateDivergence(field, marker, t),
+        left: rect.left - sectionRect.left + originX + marker.x * scale,
+        top: rect.top - sectionRect.top + originY - marker.y * scale,
+      })),
+    )
+  }, [activeQuestion, field])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(syncMarkerPositions)
+    return () => window.cancelAnimationFrame(frame)
+  }, [syncMarkerPositions])
 
   useEffect(() => {
     tracersRef.current = []
@@ -1319,6 +1857,7 @@ function App() {
       tracersRef.current = []
       particlesRef.current = []
       redraw()
+      window.requestAnimationFrame(syncMarkerPositions)
     }
 
     lastFrameTimeRef.current = null
@@ -1329,7 +1868,7 @@ function App() {
       cancelAnimationFrame(frame)
       window.removeEventListener('resize', handleResize)
     }
-  }, [isPlaying, redraw])
+  }, [isPlaying, redraw, syncMarkerPositions])
 
   useEffect(() => {
     if (!autoRandomize) return
@@ -1352,14 +1891,12 @@ function App() {
       if (event.code === 'Space') {
         event.preventDefault()
         setIsPlaying((value) => !value)
-      } else if (event.key.toLowerCase() === 'r') {
-        randomizeField()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [randomizeField])
+  }, [])
 
   const applyPreset = (name: string) => {
     const preset = presets.find((item) => item.name === name)
@@ -1384,40 +1921,171 @@ function App() {
       event.clientY,
     )
     const sectionRect = visualizationRef.current.getBoundingClientRect()
-    const curl = calculateCurl(field, fieldPoint, performance.now() / 1000)
+    const t = performance.now() / 1000
+    const curl = calculateCurl(field, fieldPoint, t)
+    const divergence = calculateDivergence(field, fieldPoint, t)
+    const closestMarker = activeQuestion.markers.reduce<{
+      label: string
+      distance: number
+    } | null>((closest, marker) => {
+      const distance = Math.hypot(fieldPoint.x - marker.x, fieldPoint.y - marker.y)
+      if (!closest || distance < closest.distance) {
+        return { label: marker.label, distance }
+      }
+      return closest
+    }, null)
 
     setProbe({
       x: event.clientX - sectionRect.left,
       y: event.clientY - sectionRect.top,
       curl,
+      divergence,
       visible: true,
     })
+    setNearbyMarker(
+      closestMarker && closestMarker.distance < 0.42 ? closestMarker.label : null,
+    )
   }
 
   const hideProbe = () => {
     setProbe((current) => ({ ...current, visible: false }))
+    setNearbyMarker(null)
   }
 
-  const probeMagnitude = Math.min(4, Math.abs(probe.curl))
+  const primaryProbeValue =
+    activeQuestion.metric === 'divergence' ? probe.divergence : probe.curl
+  const probeMagnitude =
+    activeQuestion.metric === 'both'
+      ? Math.min(4, Math.max(Math.abs(probe.curl), Math.abs(probe.divergence)))
+      : Math.min(4, Math.abs(primaryProbeValue))
   const probeIntensity = Math.min(1, probeMagnitude / 4)
   const probeLabel =
-    Math.abs(probe.curl) >= 10
-      ? probe.curl.toFixed(0)
-      : probe.curl.toFixed(2)
+    labPhase !== 'investigate'
+      ? ''
+      : activeQuestion.metric === 'both'
+        ? `curl ${formatMetricValue(probe.curl)} | div ${formatMetricValue(probe.divergence)}`
+        : formatMetricValue(primaryProbeValue)
+  const probeHue =
+    activeQuestion.metric === 'curl'
+      ? probe.curl >= 0
+        ? 181
+        : 23
+      : activeQuestion.metric === 'divergence'
+        ? probe.divergence >= 0
+          ? 181
+          : 23
+        : 196
+  const divergenceScaleStart = probe.divergence > 0.05 ? 0.58 : probe.divergence < -0.05 ? 1.08 : 0.84
+  const divergenceScaleEnd = probe.divergence > 0.05 ? 1.08 : probe.divergence < -0.05 ? 0.58 : 0.84
   const probeStyle = {
     left: `${probe.x}px`,
     top: `${probe.y}px`,
     '--probe-duration': `${Math.max(0.28, 1.7 / (0.25 + probeMagnitude))}s`,
     '--probe-direction': probe.curl >= 0 ? 'reverse' : 'normal',
     '--probe-intensity': probeIntensity,
-    '--probe-hue': probe.curl >= 0 ? 181 : 23,
+    '--probe-hue': probeHue,
+    '--blob-start': divergenceScaleStart,
+    '--blob-end': divergenceScaleEnd,
   } as CSSProperties
+  const fieldDetailsRevealed = labPhase !== 'predict' || answerSubmitted
+  const displayedDx = fieldDetailsRevealed ? dx : 'hidden until probe'
+  const displayedDy = fieldDetailsRevealed ? dy : 'hidden until probe'
   const presetMenuValue =
-    presets.find((preset) => preset.dx === dx && preset.dy === dy)?.name ?? ''
+    fieldDetailsRevealed
+      ? presets.find((preset) => preset.dx === dx && preset.dy === dy)?.name ?? ''
+      : 'lab-field'
   const presetMenuOptions = [
+    { value: 'lab-field', label: 'Lab field' },
     { value: '', label: 'Custom' },
     ...presets.map((preset) => ({ value: preset.name, label: preset.name })),
   ]
+  const answeredCount = Object.values(answerRecords).filter(
+    (record) => record.submitted,
+  ).length
+  const progressLabel =
+    panelMode === 'intro' && !hasSeenIntro
+      ? 'Intro'
+      : `${activeLesson.shortTitle} ${activeQuestionOrdinal.ordinal}/${activeQuestionOrdinal.total}`
+
+  const startLab = () => {
+    setHasSeenIntro(true)
+    const firstQuestion = labQuestions[0]
+    setActiveQuestionIndex(0)
+    setDx(firstQuestion.field.dx)
+    setDy(firstQuestion.field.dy)
+    setColorMode('flow')
+    setSeedingMode('uniform')
+    setShowFieldArrows(true)
+    setPanelMode('question')
+    setPanelCollapsed(false)
+    setLabPhase(answerRecords[0]?.submitted ? 'explain' : 'predict')
+    setProbeEnabled(false)
+    hideProbe()
+    tracersRef.current = []
+    particlesRef.current = []
+    lastFrameTimeRef.current = null
+  }
+
+  const selectOption = (option: string) => {
+    if (labPhase !== 'predict') return
+    setAnswerRecords((current) => ({
+      ...current,
+      [activeQuestionIndex]: {
+        selectedOption: option,
+        submitted: false,
+        correct: false,
+      },
+    }))
+  }
+
+  const startInvestigation = () => {
+    if (!canUseProbe) return
+    setLabPhase('investigate')
+    setSeedingMode(
+      activeQuestion.metric === 'divergence' ? 'divergence' : 'uniform',
+    )
+    setProbeEnabled(true)
+    hideProbe()
+  }
+
+  const submitAnswer = () => {
+    if (!canSubmit || !selectedOption) return
+    setAnswerRecords((current) => ({
+      ...current,
+      [activeQuestionIndex]: {
+        selectedOption,
+        submitted: true,
+        correct: selectedOption === activeQuestion.answer,
+      },
+    }))
+    setLabPhase('explain')
+    setProbeEnabled(false)
+    hideProbe()
+  }
+
+  const goToQuestion = (index: number) => {
+    const record = answerRecords[index]
+    const question = labQuestions[index]
+    setActiveQuestionIndex(index)
+    setDx(question.field.dx)
+    setDy(question.field.dy)
+    setColorMode('flow')
+    setSeedingMode('uniform')
+    setShowFieldArrows(true)
+    setHasSeenIntro(true)
+    setPanelMode('question')
+    setPanelCollapsed(false)
+    setLabPhase(record?.submitted ? 'explain' : 'predict')
+    setProbeEnabled(false)
+    hideProbe()
+    tracersRef.current = []
+    particlesRef.current = []
+    lastFrameTimeRef.current = null
+  }
+
+  const goToNextQuestion = () => {
+    goToQuestion((activeQuestionIndex + 1) % labQuestions.length)
+  }
 
   return (
     <main className="app-shell">
@@ -1427,14 +2095,32 @@ function App() {
           <span>Vector Fields</span>
         </div>
 
-        <label className="formula-control">
+        <label className="formula-control formula-control-locked">
           <span>dx</span>
-          <input value={dx} onChange={(event) => setDx(event.target.value)} />
+          <input
+            value={displayedDx}
+            readOnly
+            aria-readonly="true"
+            title={
+              fieldDetailsRevealed
+                ? 'The guided lab controls this field'
+                : 'Make a prediction before seeing the formula'
+            }
+          />
         </label>
 
-        <label className="formula-control">
+        <label className="formula-control formula-control-locked">
           <span>dy</span>
-          <input value={dy} onChange={(event) => setDy(event.target.value)} />
+          <input
+            value={displayedDy}
+            readOnly
+            aria-readonly="true"
+            title={
+              fieldDetailsRevealed
+                ? 'The guided lab controls this field'
+                : 'Make a prediction before seeing the formula'
+            }
+          />
         </label>
 
         <IntegratedMenu
@@ -1444,6 +2130,7 @@ function App() {
           onChange={(nextValue) => {
             if (nextValue) applyPreset(nextValue)
           }}
+          disabled
         />
 
         <IntegratedMenu
@@ -1494,7 +2181,7 @@ function App() {
           <Navigation2 aria-hidden="true" />
         </button>
 
-        <button type="button" className="icon-button" onClick={randomizeField} aria-label="Randomize field" title="Randomize field">
+        <button type="button" className="icon-button" onClick={randomizeField} aria-label="Randomize field" title="Randomize field" disabled>
           <Dices aria-hidden="true" />
         </button>
 
@@ -1508,6 +2195,7 @@ function App() {
           aria-label={autoRandomize ? 'Stop auto randomize' : 'Start auto randomize'}
           aria-pressed={autoRandomize}
           title="Auto randomize"
+          disabled
         >
           <Sparkles aria-hidden="true" />
         </button>
@@ -1521,15 +2209,26 @@ function App() {
         <button
           type="button"
           className="probe-tool-button"
-          aria-label="Toggle curl probe"
+          aria-label={`${activeQuestion.metric === 'divergence' ? 'Divergence' : activeQuestion.metric === 'both' ? 'Comparison' : 'Curl'} probe`}
           aria-pressed={probeEnabled}
-          title="Curl probe"
+          title={
+            labPhase === 'investigate'
+              ? `${activeQuestion.metric === 'divergence' ? 'Divergence' : activeQuestion.metric === 'both' ? 'Comparison' : 'Curl'} probe`
+              : 'Choose an answer and use the lab panel to turn on the probe'
+          }
+          disabled={labPhase !== 'investigate'}
           onClick={() => {
             setProbeEnabled((enabled) => !enabled)
             hideProbe()
           }}
         >
-          <CurlProbeIcon />
+          {activeQuestion.metric === 'divergence' ? (
+            <DivergenceProbeIcon />
+          ) : activeQuestion.metric === 'both' ? (
+            <CompareProbeIcon />
+          ) : (
+            <CurlProbeIcon />
+          )}
         </button>
       </aside>
 
@@ -1543,39 +2242,301 @@ function App() {
           onPointerMove={updateProbe}
           onPointerLeave={hideProbe}
         />
+        {markerPositions.map((marker) => {
+          const active = nearbyMarker === marker.label
+
+          return (
+            <div
+              key={marker.label}
+              className={active ? 'field-marker field-marker-active' : 'field-marker'}
+              style={{ left: marker.left, top: marker.top }}
+              aria-label={`Point ${marker.label}`}
+            >
+              <span>{marker.label}</span>
+              {labPhase === 'investigate' && active ? (
+                <strong>
+                  {activeQuestion.metric === 'divergence'
+                    ? formatMetricValue(marker.divergence)
+                    : activeQuestion.metric === 'both'
+                      ? `c ${formatMetricValue(marker.curl)} | d ${formatMetricValue(marker.divergence)}`
+                      : formatMetricValue(marker.curl)}
+                </strong>
+              ) : null}
+            </div>
+          )
+        })}
         {probeEnabled && probe.visible ? (
           <div
-            className="curl-probe"
+            className={`metric-probe metric-probe-${activeQuestion.metric}`}
             style={probeStyle}
-            data-curl={probeLabel}
+            data-reading={probeLabel}
             aria-hidden="true"
           >
-            <CurlProbeIcon framed={false} mirrored={probe.curl >= 0} />
+            {activeQuestion.metric === 'divergence' ? (
+              <span className="divergence-probe-blob" />
+            ) : activeQuestion.metric === 'both' ? (
+              <span className="comparison-probe-pair">
+                <CurlProbeIcon framed={false} mirrored={probe.curl >= 0} />
+                <span className="divergence-probe-blob" />
+              </span>
+            ) : (
+              <CurlProbeIcon framed={false} mirrored={probe.curl >= 0} />
+            )}
           </div>
         ) : null}
-      </section>
 
-      <nav className="lesson-bar" aria-label="Lesson navigation">
-        <button
-          type="button"
-          className="icon-button"
-          onClick={() => setLessonIndex((value) => Math.max(0, value - 1))}
-          disabled={lessonIndex === 0}
-          aria-label="Previous lesson"
-        >
-          <ArrowLeft aria-hidden="true" />
-        </button>
-        <span>{lessons[lessonIndex]}</span>
-        <button
-          type="button"
-          className="icon-button"
-          onClick={() => setLessonIndex((value) => Math.min(lessons.length - 1, value + 1))}
-          disabled={lessonIndex === lessons.length - 1}
-          aria-label="Next lesson"
-        >
-          <ArrowRight aria-hidden="true" />
-        </button>
-      </nav>
+        {panelCollapsed ? (
+          <button
+            type="button"
+            className="lab-panel-collapsed"
+            onClick={() => setPanelCollapsed(false)}
+            aria-label="Expand lab panel"
+          >
+            <span>
+              <strong>{labTitle}</strong>
+              <em>{progressLabel}</em>
+            </span>
+            <ChevronUp aria-hidden="true" />
+          </button>
+        ) : (
+          <aside className="lab-panel" aria-label="Guided lab panel">
+            <div className="lab-panel-header">
+              <div>
+                <span>{labTitle}</span>
+                <strong>{progressLabel}</strong>
+              </div>
+              <div className="lab-panel-actions">
+                {panelMode === 'intro' ? null : panelMode !== 'question' ? (
+                  <button
+                    type="button"
+                    className="lab-icon-button"
+                    onClick={() => setPanelMode('question')}
+                    aria-label="Back to question"
+                  >
+                    <ArrowLeft aria-hidden="true" />
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="lab-text-button"
+                      onClick={() => setPanelMode('concept')}
+                    >
+                      {activeQuestion.lessonKind === 'curl'
+                        ? 'What is curl?'
+                        : activeQuestion.lessonKind === 'divergence'
+                          ? 'What is divergence?'
+                          : 'Compare'}
+                    </button>
+                    <button
+                      type="button"
+                      className="lab-icon-button"
+                      onClick={() => setPanelMode('menu')}
+                      aria-label="Open lab menu"
+                    >
+                      <ListChecks aria-hidden="true" />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="lab-icon-button"
+                  onClick={() => setPanelCollapsed(true)}
+                  aria-label="Collapse lab panel"
+                >
+                  <ChevronDown aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            {panelMode === 'intro' || panelMode === 'concept' ? (
+              panelMode === 'intro' ? (
+                <LocalMeasurementsIntro
+                  action={
+                  <button
+                    type="button"
+                    className="lab-primary-button lab-start-button"
+                    onClick={startLab}
+                  >
+                    Start Curl
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                  }
+                />
+              ) : (
+                <LessonConcept lessonKind={activeQuestion.lessonKind} />
+              )
+            ) : panelMode === 'menu' ? (
+              <div className="lab-menu">
+                <div className="lab-menu-summary">
+                  <span>{answeredCount} submitted</span>
+                  <strong>{lessonSections.length} lesson steps</strong>
+                </div>
+                <button
+                  type="button"
+                  className="lab-menu-row"
+                  onClick={() => {
+                    setPanelMode('intro')
+                    setPanelCollapsed(false)
+                  }}
+                >
+                  <span>0</span>
+                  <strong>Local Measurements</strong>
+                  <em className="lab-status lab-status-correct">
+                    {hasSeenIntro ? 'Complete' : 'Intro'}
+                  </em>
+                </button>
+                {lessonSections
+                  .filter(
+                    (section): section is LessonSection & { kind: LessonKind } =>
+                      section.kind !== 'intro',
+                  )
+                  .map((section) => {
+                    const questions = getLessonQuestions(section.kind)
+                    const submitted = questions.filter(
+                      ({ index }) => answerRecords[index]?.submitted,
+                    ).length
+
+                    return (
+                      <div className="lab-menu-section" key={section.kind}>
+                        <div className="lab-menu-section-title">
+                          <strong>{section.title}</strong>
+                          <span>
+                            {submitted}/{questions.length}
+                          </span>
+                        </div>
+                        {questions.map(({ question, index }, questionIndex) => {
+                          const record = answerRecords[index]
+                          const status = getQuestionStatus(record)
+                          const active = index === activeQuestionIndex
+                          const statusClass = getQuestionStatusClass(record)
+
+                          return (
+                            <button
+                              key={`${question.lessonKind}-${question.title}`}
+                              type="button"
+                              className={
+                                active
+                                  ? 'lab-menu-row lab-menu-row-active'
+                                  : 'lab-menu-row'
+                              }
+                              onClick={() => goToQuestion(index)}
+                            >
+                              <span>{questionIndex + 1}</span>
+                              <strong>{question.title}</strong>
+                              <em className={`lab-status lab-status-${statusClass}`}>
+                                {status}
+                              </em>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+              </div>
+            ) : (
+              <div className="lab-question">
+                <div className="lab-phase-row">
+                  <span className={`lab-phase lab-phase-${labPhase}`}>
+                    {labPhase}
+                  </span>
+                  <span>{activeQuestion.title}</span>
+                </div>
+                <p>{activeQuestion.prompt}</p>
+                {labPhase === 'predict' ? (
+                  <span className="lab-hint">
+                    Predict from the motion and marker positions first. The
+                    formula is hidden until you turn on the probe.
+                  </span>
+                ) : (
+                  <span className="lab-hint lab-hint-revealed">
+                    {activeQuestion.revealedInsight}
+                  </span>
+                )}
+                <div className="lab-options" role="radiogroup">
+                  {activeQuestion.options.map((option) => {
+                    const selected = selectedOption === option
+                    const correct = answerSubmitted && option === activeQuestion.answer
+                    const wrong =
+                      answerSubmitted && selected && option !== activeQuestion.answer
+                    const className = [
+                      'lab-option',
+                      selected ? 'lab-option-selected' : '',
+                      correct ? 'lab-option-correct' : '',
+                      wrong ? 'lab-option-incorrect' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        className={className}
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={labPhase !== 'predict'}
+                        onClick={() => selectOption(option)}
+                      >
+                        <span>{option}</span>
+                        {selected ? <Check aria-hidden="true" /> : null}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {labPhase === 'explain' && activeAnswer ? (
+                  <div
+                    className={
+                      activeAnswer.correct
+                        ? 'lab-feedback lab-feedback-correct'
+                        : 'lab-feedback lab-feedback-incorrect'
+                    }
+                  >
+                    <strong>
+                      {activeAnswer.correct ? 'Correct' : 'Not quite'}
+                    </strong>
+                    <span>{activeQuestion.explanation}</span>
+                  </div>
+                ) : null}
+
+                <div className="lab-controls">
+                  {labPhase === 'predict' ? (
+                    <button
+                      type="button"
+                      className="lab-primary-button"
+                      disabled={!canUseProbe}
+                      onClick={startInvestigation}
+                    >
+                      Use Probe
+                    </button>
+                  ) : null}
+                  {labPhase === 'investigate' ? (
+                    <button
+                      type="button"
+                      className="lab-primary-button"
+                      disabled={!canSubmit}
+                      onClick={submitAnswer}
+                    >
+                      Submit
+                    </button>
+                  ) : null}
+                  {labPhase === 'explain' ? (
+                    <button
+                      type="button"
+                      className="lab-primary-button"
+                      onClick={goToNextQuestion}
+                    >
+                      Next
+                      <ArrowRight aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </aside>
+        )}
+      </section>
     </main>
   )
 }
