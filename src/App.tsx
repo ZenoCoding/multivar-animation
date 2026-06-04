@@ -20,7 +20,6 @@ import {
   RotateCcw,
   RotateCw,
   Sparkles,
-  Waves,
   Trash2,
   MoveUpRight,
 } from 'lucide-react'
@@ -3128,7 +3127,7 @@ function App() {
     <main className="app-shell">
       <header className="topbar" aria-label="Vector field controls">
         <div className="brand">
-          <Waves aria-hidden="true" />
+          <FieldFocusLogo aria-hidden="true" />
           <span>FieldFocus</span>
         </div>
 
@@ -3946,7 +3945,7 @@ function App() {
             {welcomePage === 1 ? (
               <>
                 <h2 id="welcome-title">
-                  <Waves aria-hidden="true" />
+                  <FieldFocusLogo aria-hidden="true" />
                   Hello Dr. Chaudri!
                 </h2>
                 <div className="welcome-body">
@@ -4046,6 +4045,79 @@ function App() {
     </main>
   )
 }
+
+const FieldFocusLogo = ({ className, style, size }: { className?: string; style?: CSSProperties; size?: number }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    className={className}
+    style={{
+      width: size,
+      height: size,
+      flexShrink: 0,
+      display: 'inline-block',
+      verticalAlign: 'middle',
+      ...style
+    }}
+  >
+    <defs>
+      <linearGradient id="logo-flow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#00f2fe" />
+        <stop offset="50%" stopColor="#4facfe" />
+        <stop offset="100%" stopColor="#a855f7" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M 5 8 L 5 5 L 8 5"
+      stroke="#4facfe"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ strokeWidth: 1.6 }}
+    />
+    <path
+      d="M 16 5 L 19 5 L 19 8"
+      stroke="#4facfe"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ strokeWidth: 1.6 }}
+    />
+    <path
+      d="M 5 16 L 5 19 L 8 19"
+      stroke="#4facfe"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ strokeWidth: 1.6 }}
+    />
+    <path
+      d="M 16 19 L 19 19 L 19 16"
+      stroke="#4facfe"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ strokeWidth: 1.6 }}
+    />
+    <path
+      d="M 7 13.5 C 9.5 6.5, 14.5 17.5, 17 10.5"
+      stroke="url(#logo-flow-grad)"
+      strokeLinecap="round"
+      style={{ strokeWidth: 1.8 }}
+    />
+    <path
+      d="M 8 15 C 10.5 8, 14 19, 16 13"
+      stroke="url(#logo-flow-grad)"
+      strokeLinecap="round"
+      opacity="0.6"
+      style={{ strokeWidth: 0.75 }}
+    />
+    <path
+      d="M 6 12 C 8.5 4.5, 15 15, 18 8"
+      stroke="url(#logo-flow-grad)"
+      strokeLinecap="round"
+      opacity="0.4"
+      style={{ strokeWidth: 0.75 }}
+    />
+  </svg>
+)
 
 const YouTubeIcon = () => (
   <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style={{ color: '#FF0000', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
