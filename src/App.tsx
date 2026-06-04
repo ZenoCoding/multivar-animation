@@ -2134,8 +2134,15 @@ function IntegratedMenu({
   )
 }
 
-function formatMetricValue(value: number) {
-  return Math.abs(value) >= 10 ? value.toFixed(0) : value.toFixed(2)
+function formatCompactValue(value: number) {
+  const formatted = Math.abs(value) >= 10 ? value.toFixed(0) : value.toFixed(2)
+  if (value > 0.005) {
+    return `+${formatted}`
+  }
+  if (value < -0.005) {
+    return formatted
+  }
+  return '0.00'
 }
 
 function getLessonQuestions(kind: LessonKind) {
@@ -2172,42 +2179,20 @@ function getQuestionStatus(record: AnswerRecord | undefined) {
   return record.correct ? 'Correct' : 'Incorrect'
 }
 
-function getCurlDescription(value: number) {
-  if (value > 0.08) return 'counterclockwise spin'
-  if (value < -0.08) return 'clockwise spin'
-  return 'no local spin'
-}
-
-function getDivergenceDescription(value: number) {
-  if (value > 0.08) return 'blob expands'
-  if (value < -0.08) return 'blob contracts'
-  return 'same area'
-}
-
 function getProbeReadingLabel(
   metric: ProbeMetric,
   curl: number,
   divergence: number,
-  numeric = false,
 ) {
   if (metric === 'vector') {
     return 'vector telemetry'
   }
-  if (numeric) {
-    if (metric === 'both') {
-      return `curl ${formatMetricValue(curl)} | div ${formatMetricValue(divergence)}`
-    }
-
-    return formatMetricValue(metric === 'divergence' ? divergence : curl)
-  }
-
   if (metric === 'both') {
-    return `${getCurlDescription(curl)} | ${getDivergenceDescription(divergence)}`
+    return `curl: ${formatCompactValue(curl)} | div: ${formatCompactValue(divergence)}`
   }
-
   return metric === 'divergence'
-    ? getDivergenceDescription(divergence)
-    : getCurlDescription(curl)
+    ? `div: ${formatCompactValue(divergence)}`
+    : `curl: ${formatCompactValue(curl)}`
 }
 
 function CurlConceptDiagram({
@@ -3243,8 +3228,8 @@ function App() {
                 </span>
                 <span className="divergence-probe-blob" />
                 <span className="comparison-probe-readout">
-                  <em>{getCurlDescription(probe.curl)}</em>
-                  <em>{getDivergenceDescription(probe.divergence)}</em>
+                  <em>curl: {formatCompactValue(probe.curl)}</em>
+                  <em>div: {formatCompactValue(probe.divergence)}</em>
                 </span>
               </>
             ) : activeMetric === 'vector' ? (
@@ -3366,8 +3351,8 @@ function App() {
                   </span>
                   <span className="divergence-probe-blob" />
                   <span className="comparison-probe-readout">
-                    <em>{getCurlDescription(placed.curl)}</em>
-                    <em>{getDivergenceDescription(placed.divergence)}</em>
+                    <em>curl: {formatCompactValue(placed.curl)}</em>
+                    <em>div: {formatCompactValue(placed.divergence)}</em>
                   </span>
                 </>
               ) : placed.metric === 'vector' ? (

@@ -517,6 +517,7 @@ select {
   color: hsl(var(--probe-hue) 70% 30%);
   font: 750 11px/1.25 var(--mono);
   text-align: center;
+  white-space: nowrap;
 }
 
 .metric-probe-both::after {
@@ -753,6 +754,7 @@ select {
   font: 780 11px/1.25 var(--mono);
   text-align: center;
   box-shadow: 0 6px 16px rgba(21, 44, 56, 0.12);
+  white-space: nowrap;
 }
 
 .lab-panel,
