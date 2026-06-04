@@ -26,13 +26,13 @@
   min-width: max-content;
   margin-right: 6px;
   color: #16252d;
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 700;
 }
 
 .brand svg {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   color: #158f91;
   stroke-width: 2.2;
 }
@@ -1688,18 +1688,18 @@ select {
 }
 
 .welcome-card h2 {
-  font-size: 26px;
+  font-size: 32px;
   font-weight: 800;
   color: #117d80;
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .welcome-card h2 svg {
-  width: 36px;
-  height: 36px;
+  width: 48px;
+  height: 48px;
   color: #129497;
   animation: welcomeWave 2.5s ease-in-out infinite;
 }
