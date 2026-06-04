@@ -2440,6 +2440,18 @@ function App() {
   const [panelMode, setPanelMode] = useState<LabPanelMode>('intro')
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [hasSeenIntro, setHasSeenIntro] = useState(false)
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('vector_fields_welcome_seen'))
+  const [isDismissing, setIsDismissing] = useState(false)
+  const exploreBtnRef = useRef<HTMLButtonElement | null>(null)
+
+  const dismissWelcome = useCallback(() => {
+    setIsDismissing(true)
+  }, [])
+
+  const handleExplosionComplete = useCallback(() => {
+    setShowWelcome(false)
+    localStorage.setItem('vector_fields_welcome_seen', 'true')
+  }, [])
   const [answerRecords, setAnswerRecords] = useState<
     Record<number, AnswerRecord>
   >({})
@@ -2666,6 +2678,17 @@ function App() {
     const interval = window.setInterval(randomizeField, 12000)
     return () => window.clearInterval(interval)
   }, [autoRandomize, randomizeField])
+
+  useEffect(() => {
+    if (!showWelcome) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        dismissWelcome()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showWelcome, dismissWelcome])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -3088,7 +3111,7 @@ function App() {
 
         <button
           type="button"
-          className="icon-button"
+          className="icon-button tooltip-bottom"
           onClick={() => setShowDivergenceEmphasis((value) => !value)}
           aria-label={
             showDivergenceEmphasis
@@ -3096,48 +3119,67 @@ function App() {
               : 'Show source and sink emphasis'
           }
           aria-pressed={showDivergenceEmphasis}
-          title="Source/sink emphasis"
+          data-tooltip="Source/sink emphasis"
         >
           <DivergenceProbeIcon framed={false} />
         </button>
 
         <DensitySlider value={density} onChange={setDensity} />
 
-        <button type="button" className="icon-button" onClick={() => setIsPlaying((value) => !value)} aria-label={isPlaying ? 'Pause flow' : 'Play flow'}>
+        <button
+          type="button"
+          className="icon-button tooltip-bottom"
+          onClick={() => setIsPlaying((value) => !value)}
+          aria-label={isPlaying ? 'Pause flow' : 'Play flow'}
+          data-tooltip={isPlaying ? 'Pause' : 'Play'}
+        >
           {isPlaying ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
         </button>
 
         <button
           type="button"
-          className="icon-button"
+          className="icon-button tooltip-bottom"
           onClick={() => setShowFieldArrows((value) => !value)}
           aria-label={showFieldArrows ? 'Hide field arrows' : 'Show field arrows'}
           aria-pressed={showFieldArrows}
-          title="Field arrows"
+          data-tooltip="Field arrows"
         >
           <Navigation2 aria-hidden="true" />
         </button>
 
-        <button type="button" className="icon-button" onClick={randomizeField} aria-label="Randomize field" title="Randomize field" disabled={labStarted}>
+        <button
+          type="button"
+          className="icon-button tooltip-bottom"
+          onClick={randomizeField}
+          aria-label="Randomize field"
+          data-tooltip="Randomize field"
+          disabled={labStarted}
+        >
           <Dices aria-hidden="true" />
         </button>
 
         <button
           type="button"
-          className="icon-button"
+          className="icon-button tooltip-bottom"
           onClick={() => {
             if (!autoRandomize) randomizeField()
             setAutoRandomize((value) => !value)
           }}
           aria-label={autoRandomize ? 'Stop auto randomize' : 'Start auto randomize'}
           aria-pressed={autoRandomize}
-          title="Auto randomize"
+          data-tooltip={autoRandomize ? 'Stop auto-randomize' : 'Auto-randomize'}
           disabled={labStarted}
         >
           <Sparkles aria-hidden="true" />
         </button>
 
-        <button type="button" className="icon-button" onClick={resetFlow} aria-label="Redraw field">
+        <button
+          type="button"
+          className="icon-button tooltip-bottom"
+          onClick={resetFlow}
+          aria-label="Redraw field"
+          data-tooltip="Redraw field"
+        >
           <RotateCcw aria-hidden="true" />
         </button>
       </header>
@@ -3148,13 +3190,13 @@ function App() {
         {labStarted ? (
           <button
             type="button"
-            className="probe-tool-button"
+            className="probe-tool-button tooltip-left"
             aria-label={`${activeMetric === 'divergence' ? 'Divergence' : activeMetric === 'both' ? 'Comparison' : 'Curl'} probe`}
             aria-pressed={probeEnabled}
-            title={
+            data-tooltip={
               labPhase === 'investigate'
                 ? `${activeMetric === 'divergence' ? 'Divergence' : activeMetric === 'both' ? 'Comparison' : 'Curl'} probe`
-                : 'Choose an answer and use the lab panel to turn on the probe'
+                : 'Choose an answer first'
             }
             disabled={labPhase !== 'investigate'}
             onClick={() => {
@@ -3174,10 +3216,10 @@ function App() {
           <>
             <button
               type="button"
-              className="probe-tool-button"
+              className="probe-tool-button tooltip-left"
               aria-label="Curl probe"
               aria-pressed={probeEnabled && playgroundMetric === 'curl'}
-              title="Curl probe"
+              data-tooltip="Curl probe"
               onClick={() => {
                 if (probeEnabled && playgroundMetric === 'curl') {
                   setProbeEnabled(false)
@@ -3192,10 +3234,10 @@ function App() {
             </button>
             <button
               type="button"
-              className="probe-tool-button"
+              className="probe-tool-button tooltip-left"
               aria-label="Divergence probe"
               aria-pressed={probeEnabled && playgroundMetric === 'divergence'}
-              title="Divergence probe"
+              data-tooltip="Divergence probe"
               onClick={() => {
                 if (probeEnabled && playgroundMetric === 'divergence') {
                   setProbeEnabled(false)
@@ -3210,10 +3252,10 @@ function App() {
             </button>
             <button
               type="button"
-              className="probe-tool-button"
+              className="probe-tool-button tooltip-left"
               aria-label="Comparison probe"
               aria-pressed={probeEnabled && playgroundMetric === 'both'}
-              title="Comparison probe"
+              data-tooltip="Comparison probe"
               onClick={() => {
                 if (probeEnabled && playgroundMetric === 'both') {
                   setProbeEnabled(false)
@@ -3228,10 +3270,10 @@ function App() {
             </button>
             <button
               type="button"
-              className="probe-tool-button"
+              className="probe-tool-button tooltip-left"
               aria-label="Vector probe"
               aria-pressed={probeEnabled && playgroundMetric === 'vector'}
-              title="Vector probe"
+              data-tooltip="Vector probe"
               onClick={() => {
                 if (probeEnabled && playgroundMetric === 'vector') {
                   setProbeEnabled(false)
@@ -3249,10 +3291,10 @@ function App() {
         {placedProbes.length > 0 ? (
           <button
             type="button"
-            className="probe-tool-button clear-probes-button"
+            className="probe-tool-button clear-probes-button tooltip-left"
             onClick={() => setPlacedProbes([])}
             aria-label="Clear all placed probes"
-            title="Clear all placed probes"
+            data-tooltip="Clear all placed probes"
             style={{ color: '#a14a25' }}
           >
             <Trash2 aria-hidden="true" />
@@ -3530,9 +3572,10 @@ function App() {
                 {panelMode === 'intro' ? null : panelMode !== 'question' ? (
                   <button
                     type="button"
-                    className="lab-icon-button"
+                    className="lab-icon-button tooltip-bottom"
                     onClick={() => setPanelMode('question')}
                     aria-label="Back to question"
+                    data-tooltip="Back to question"
                   >
                     <ArrowLeft aria-hidden="true" />
                   </button>
@@ -3551,9 +3594,10 @@ function App() {
                     </button>
                     <button
                       type="button"
-                      className="lab-icon-button"
+                      className="lab-icon-button tooltip-bottom"
                       onClick={() => setPanelMode('menu')}
                       aria-label="Open lab menu"
+                      data-tooltip="Open lab menu"
                     >
                       <ListChecks aria-hidden="true" />
                     </button>
@@ -3561,9 +3605,10 @@ function App() {
                 )}
                 <button
                   type="button"
-                  className="lab-icon-button"
+                  className="lab-icon-button tooltip-bottom"
                   onClick={() => setPanelCollapsed(true)}
                   aria-label="Collapse lab panel"
+                  data-tooltip="Collapse lab panel"
                 >
                   <ChevronDown aria-hidden="true" />
                 </button>
@@ -3780,7 +3825,271 @@ function App() {
         )}
       </section>
       <div className="app-version">v{__APP_VERSION__}</div>
+      {showWelcome && (
+        <div className={`welcome-overlay${isDismissing ? ' welcome-dismissing' : ''}`} onClick={dismissWelcome}>
+          <ExplosionCanvas
+            active={isDismissing}
+            buttonElement={exploreBtnRef.current}
+            onComplete={handleExplosionComplete}
+            colorMode={colorMode}
+            activeQuestionIndex={activeQuestionIndex}
+          />
+          <div className={`welcome-card${isDismissing ? ' welcome-dismissing' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="welcome-title">
+            <h2 id="welcome-title">
+              <Waves aria-hidden="true" />
+              Hello Dr. Chaudri!
+            </h2>
+            <div className="welcome-body">
+              <p className="welcome-highlight">I hope you enjoy our Multivariable Calculus final project.</p>
+              <p>
+                One of the most difficult concepts to visualize for students are vector fields. As well as divergence, curl, and all that follow. We wanted to give students a way to understand these vector fields that was both beautiful and practical. You can either use this tool with the guided lessons to build your intuition, or just enjoy the beauty of math.
+              </p>
+              <p>
+                There's lots to explore here, and we hope you enjoy using this project as much as we did creating it.
+              </p>
+            </div>
+            <div className="welcome-footer">
+              <div className="welcome-signatures">
+                — Alex, Brian, Jason, Mihir, Rakhi and Tycho
+              </div>
+              <button
+                ref={exploreBtnRef}
+                type="button"
+                className="welcome-btn"
+                onClick={dismissWelcome}
+              >
+                <span>Explore Project</span>
+                <ArrowRight aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
+  )
+}
+
+interface ExplosionCanvasProps {
+  active: boolean
+  buttonElement: HTMLButtonElement | null
+  onComplete: () => void
+  colorMode: ColorMode
+  activeQuestionIndex: number
+}
+
+function ExplosionCanvas({ active, buttonElement, onComplete, colorMode, activeQuestionIndex }: ExplosionCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    if (!active) return
+
+    if (!canvasRef.current || !buttonElement) {
+      onComplete()
+      return
+    }
+
+    const canvas = canvasRef.current
+    const context = canvas.getContext('2d')
+    if (!context) return
+
+    const resizeCanvas = () => {
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+    }
+    resizeCanvas()
+    window.addEventListener('resize', resizeCanvas)
+
+    const btnRect = buttonElement.getBoundingClientRect()
+    const startX = btnRect.left + btnRect.width / 2
+    const startY = btnRect.top + btnRect.height / 2
+
+    const width = window.innerWidth
+    const height = window.innerHeight
+    const originX = width / 2
+    const originY = height / 2
+    const scale = Math.min(width, height) / 8.2
+
+    const toScreen = (point: Vector) => ({
+      x: originX + point.x * scale,
+      y: originY - point.y * scale,
+    })
+
+    const mathStartX = (startX - originX) / scale
+    const mathStartY = (originY - startY) / scale
+
+    type ExplosionTracer = {
+      points: Vector[]
+      age: number
+      maxAge: number
+      targetLength: number
+      dying: boolean
+      alpha: number
+      seedAngle: number
+    }
+
+    const tracers: ExplosionTracer[] = []
+
+    // Initialize 30 streamlines flowing outwards
+    for (let i = 0; i < 30; i++) {
+      const angle = (i / 30) * Math.PI * 2 + (Math.random() - 0.5) * 0.12
+      const offsetRadius = 0.04 + Math.random() * 0.12
+      const startPoint = {
+        x: mathStartX + Math.cos(angle) * offsetRadius,
+        y: mathStartY + Math.sin(angle) * offsetRadius,
+      }
+
+      tracers.push({
+        points: [startPoint],
+        age: 0,
+        maxAge: 0.9 + Math.random() * 0.7, // 0.9s to 1.6s lifetime
+        targetLength: 20 + Math.floor(Math.random() * 12),
+        dying: false,
+        alpha: 1.0,
+        seedAngle: angle,
+      })
+    }
+
+    const drawPathLocal = (pts: Vector[]) => {
+      let previousScreen: Vector | null = null
+      pts.forEach((point, pointIndex) => {
+        const screen = toScreen(point)
+        if (
+          pointIndex === 0 ||
+          !previousScreen ||
+          Math.hypot(screen.x - previousScreen.x, screen.y - previousScreen.y) > 42
+        ) {
+          context.moveTo(screen.x, screen.y)
+        } else {
+          context.lineTo(screen.x, screen.y)
+        }
+        previousScreen = screen
+      })
+    }
+
+    const getExplosionColor = (mode: ColorMode, hue: number, alpha: number) => {
+      if (mode === 'speed') {
+        const s = (225 - hue) / 40
+        const lightness = 46 + Math.min(12, s * 3)
+        return `hsla(${hue}, 82%, ${lightness}%, ${0.66 * alpha})`
+      }
+      if (mode === 'angle') {
+        return `hsla(${hue}, 76%, 48%, ${0.64 * alpha})`
+      }
+      return `hsla(${hue}, 78%, 45%, ${0.64 * alpha})`
+    }
+
+    // A beautiful vector field centered at the button: radial expansion with swirl and waves
+    const explosionField = (x: number, y: number, seedAngle: number) => {
+      const dx = x - mathStartX
+      const dy = y - mathStartY
+      const dist = Math.hypot(dx, dy) || 0.0001
+
+      // Radial speed decays as it expands, vortex swirl is steady
+      const radialSpeed = 5.2 / (dist + 0.7)
+      const swirlSpeed = 2.2
+
+      // Wave ripple factor
+      const wave = Math.sin(dist * 1.8) * 0.4
+
+      return {
+        x: Math.cos(seedAngle) * radialSpeed - dy * swirlSpeed + Math.sin(y) * wave,
+        y: Math.sin(seedAngle) * radialSpeed + dx * swirlSpeed + Math.cos(x) * wave,
+      }
+    }
+
+    let lastTime = performance.now()
+    let animationId: number
+
+    const updateAndDraw = (now: number) => {
+      const dt = Math.min(0.03, (now - lastTime) / 1000)
+      lastTime = now
+
+      context.clearRect(0, 0, canvas.width, canvas.height)
+
+      let activeCount = 0
+
+      // Match system streamline visual styling EXACTLY
+      context.lineWidth = 1.55
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
+
+      for (let i = 0; i < tracers.length; i++) {
+        const tracer = tracers[i]
+        if (tracer.alpha <= 0) continue
+
+        activeCount++
+
+        if (!tracer.dying) {
+          tracer.age += dt
+
+          const head = tracer.points[tracer.points.length - 1]
+          const v = explosionField(head.x, head.y, tracer.seedAngle)
+
+          const next = {
+            x: head.x + v.x * dt,
+            y: head.y + v.y * dt,
+          }
+
+          tracer.points.push(next)
+
+          if (tracer.age >= tracer.maxAge) {
+            tracer.dying = true
+          }
+        } else {
+          // If dying, fade out alpha and shrink points from tail
+          tracer.alpha -= dt * 2.2
+          if (tracer.points.length > 1) {
+            tracer.points.shift()
+          }
+        }
+
+        // Limit points to target length
+        while (tracer.points.length > tracer.targetLength) {
+          tracer.points.shift()
+        }
+
+        // Draw tracer path matching native style
+        const pts = tracer.points
+        if (pts.length >= 2) {
+          const head = pts[pts.length - 1]
+          const v = explosionField(head.x, head.y, tracer.seedAngle)
+          const speed = Math.hypot(v.x, v.y)
+          const hue = getTracerHue(colorMode, v.x, v.y, speed, head, now / 1000, activeQuestionIndex)
+
+          context.strokeStyle = getExplosionColor(colorMode, hue, tracer.alpha)
+          context.beginPath()
+          drawPathLocal(pts)
+          context.stroke()
+        }
+      }
+
+      if (activeCount > 0) {
+        animationId = requestAnimationFrame(updateAndDraw)
+      } else {
+        onComplete()
+      }
+    }
+
+    animationId = requestAnimationFrame(updateAndDraw)
+
+    return () => {
+      cancelAnimationFrame(animationId)
+      window.removeEventListener('resize', resizeCanvas)
+    }
+  }, [active, buttonElement, onComplete, colorMode, activeQuestionIndex])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
+        pointerEvents: 'none',
+        zIndex: 10005,
+      }}
+    />
   )
 }
 

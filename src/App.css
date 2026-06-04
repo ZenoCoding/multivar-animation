@@ -332,6 +332,7 @@ select {
 }
 
 .icon-button {
+  position: relative;
   width: 34px;
   height: 34px;
   display: inline-grid;
@@ -422,6 +423,7 @@ select {
 }
 
 .probe-tool-button {
+  position: relative;
   width: 34px;
   height: 34px;
   display: inline-grid;
@@ -852,6 +854,7 @@ select {
 }
 
 .lab-icon-button {
+  position: relative;
   width: 30px;
   height: 30px;
   display: inline-grid;
@@ -1528,4 +1531,325 @@ select {
   .app-version {
     display: none;
   }
+}
+
+/* --- Premium Custom Hover Labels (Tooltips) --- */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]:not([data-tooltip=""]):not([data-tooltip="undefined"])::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 1000;
+  padding: 5px 8px;
+  background: rgba(21, 32, 38, 0.95);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(21, 44, 56, 0.18);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+  opacity: 0;
+  white-space: nowrap;
+  transition:
+    opacity 140ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-tooltip]:not([data-tooltip=""]):not([data-tooltip="undefined"])::before {
+  content: '';
+  position: absolute;
+  z-index: 1000;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 140ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-tooltip]:not([data-tooltip=""]):not([data-tooltip="undefined"]):hover::after,
+[data-tooltip]:not([data-tooltip=""]):not([data-tooltip="undefined"]):hover::before {
+  opacity: 1;
+}
+
+/* Position: Bottom (Default) */
+[data-tooltip].tooltip-bottom::after {
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px) scale(0.95);
+}
+[data-tooltip].tooltip-bottom::before {
+  top: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px) scale(0.95);
+  border-width: 0 5px 5px 5px;
+  border-color: transparent transparent rgba(21, 32, 38, 0.95) transparent;
+}
+[data-tooltip].tooltip-bottom:hover::after,
+[data-tooltip].tooltip-bottom:hover::before {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* Position: Top */
+[data-tooltip].tooltip-top::after {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px) scale(0.95);
+}
+[data-tooltip].tooltip-top::before {
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px) scale(0.95);
+  border-width: 5px 5px 0 5px;
+  border-color: rgba(21, 32, 38, 0.95) transparent transparent transparent;
+}
+[data-tooltip].tooltip-top:hover::after,
+[data-tooltip].tooltip-top:hover::before {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* Position: Left */
+[data-tooltip].tooltip-left::after {
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px) scale(0.95);
+}
+[data-tooltip].tooltip-left::before {
+  right: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px) scale(0.95);
+  border-width: 5px 0 5px 5px;
+  border-color: transparent transparent transparent rgba(21, 32, 38, 0.95);
+}
+[data-tooltip].tooltip-left:hover::after,
+[data-tooltip].tooltip-left:hover::before {
+  transform: translateY(-50%) translateX(0) scale(1);
+}
+
+/* Position: Right */
+[data-tooltip].tooltip-right::after {
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px) scale(0.95);
+}
+[data-tooltip].tooltip-right::before {
+  left: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px) scale(0.95);
+  border-width: 5px 5px 5px 0;
+  border-color: transparent rgba(21, 32, 38, 0.95) transparent transparent;
+}
+[data-tooltip].tooltip-right:hover::after,
+[data-tooltip].tooltip-right:hover::before {
+  transform: translateY(-50%) translateX(0) scale(1);
+}
+
+/* --- Welcome Modal Styles --- */
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000; /* Needs to be above everything else */
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 30, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 24px;
+  animation: welcomeFadeIn 300ms ease-out;
+  transition: background 400ms ease, backdrop-filter 400ms ease, -webkit-backdrop-filter 400ms ease;
+}
+
+.welcome-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 580px;
+  padding: 36px;
+  box-shadow:
+    0 24px 64px rgba(10, 25, 35, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  text-align: left;
+  transform: scale(1);
+  animation: welcomeScaleIn 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 380ms ease, box-shadow 380ms ease, filter 380ms ease;
+}
+
+.welcome-card h2 {
+  font-size: 26px;
+  font-weight: 800;
+  color: #117d80;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.welcome-card h2 svg {
+  width: 28px;
+  height: 28px;
+  color: #129497;
+  animation: welcomeWave 2.5s ease-in-out infinite;
+}
+
+.welcome-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.welcome-body p {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: #37474f;
+  margin: 0;
+}
+
+.welcome-body p.welcome-highlight {
+  font-size: 16px;
+  font-weight: 650;
+  color: #172026;
+}
+
+.welcome-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid rgba(215, 227, 232, 0.6);
+  padding-top: 24px;
+  margin-top: 8px;
+}
+
+.welcome-signatures {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #60717a;
+  line-height: 1.45;
+  max-width: 60%;
+}
+
+.welcome-btn {
+  background: linear-gradient(135deg, #129497, #1aa2a5);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(18, 148, 151, 0.3);
+  transition: all 180ms ease;
+  white-space: nowrap;
+}
+
+.welcome-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(18, 148, 151, 0.4);
+  background: linear-gradient(135deg, #15a1a4, #20b4b7);
+}
+
+.welcome-btn:active {
+  transform: scale(0.95);
+}
+
+.welcome-btn svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 180ms ease;
+}
+
+.welcome-btn:hover svg {
+  transform: translateX(3px);
+}
+
+@keyframes welcomeFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes welcomeScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes welcomeWave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px) rotate(4deg); }
+}
+
+@media (max-width: 720px) {
+  .welcome-card {
+    padding: 24px;
+    gap: 18px;
+  }
+  
+  .welcome-card h2 {
+    font-size: 22px;
+  }
+  
+  .welcome-body p {
+    font-size: 13.5px;
+  }
+  
+  .welcome-body p.welcome-highlight {
+    font-size: 15px;
+  }
+  
+  .welcome-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding-top: 18px;
+  }
+  
+  .welcome-signatures {
+    max-width: 100%;
+    text-align: center;
+  }
+  
+  .welcome-btn {
+    justify-content: center;
+  }
+}
+
+/* Dismissing / exit states */
+.welcome-overlay.welcome-dismissing {
+  background: radial-gradient(circle at center, rgba(26, 162, 165, 0.2) 0%, rgba(15, 23, 30, 0) 80%);
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  pointer-events: none;
+  transition: background 420ms cubic-bezier(0.1, 0.8, 0.3, 1), backdrop-filter 420ms cubic-bezier(0.1, 0.8, 0.3, 1), -webkit-backdrop-filter 420ms cubic-bezier(0.1, 0.8, 0.3, 1);
+}
+
+.welcome-card.welcome-dismissing {
+  transform: scale(1.42) rotate(1.2deg);
+  filter: brightness(1.3) contrast(1.05);
+  opacity: 0;
+  box-shadow: 
+    0 0 160px 80px rgba(26, 162, 165, 0.6),
+    0 0 0 9999px rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+  transition: transform 420ms cubic-bezier(0.1, 0.8, 0.3, 1), opacity 380ms ease-out, box-shadow 380ms ease-out, filter 380ms ease-out;
 }
