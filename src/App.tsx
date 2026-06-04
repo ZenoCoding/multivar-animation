@@ -3129,7 +3129,7 @@ function App() {
       <header className="topbar" aria-label="Vector field controls">
         <div className="brand">
           <Waves aria-hidden="true" />
-          <span>Vector Fields</span>
+          <span>FieldFocus</span>
         </div>
 
         <label className={`formula-control${labStarted ? ' formula-control-locked' : ''}`}>
