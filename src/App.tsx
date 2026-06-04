@@ -1222,12 +1222,20 @@ function drawParticleField(
   renderHints?: FieldRenderHints,
   perfScale = 1.0,
   lastActiveParticleCountRef?: React.MutableRefObject<number>,
+  suspendSpawning = false,
 ) {
   const prepared = prepareCanvas(canvas)
   if (!prepared) return
 
   const { context, width, height, scale, originX, originY, toScreen, resized } =
     prepared
+
+  if (suspendSpawning) {
+    context.fillStyle = `rgba(255, 255, 255, ${particleFadeAlpha * 2.5})`
+    context.fillRect(0, 0, width, height)
+    drawGrid(context, width, height, originX, originY, scale, 0.32)
+    return
+  }
   const aspect = width / height
   const particleCount = particleCountForWidth(width, density)
   const activeParticleCount = Math.round(particleCount * perfScale)
@@ -1678,6 +1686,7 @@ function drawVectorField(
   perfScale = 1.0,
   lastActiveLineCountRef?: React.MutableRefObject<number>,
   lastActiveParticleCountRef?: React.MutableRefObject<number>,
+  suspendSpawning = false,
 ) {
   if (seedingMode === 'particle') {
     drawParticleField(
@@ -1694,6 +1703,7 @@ function drawVectorField(
       renderHints,
       perfScale,
       lastActiveParticleCountRef,
+      suspendSpawning,
     )
     return
   }
@@ -1774,7 +1784,7 @@ function drawVectorField(
     if (!tracer) continue
 
     // Re-seed newly activated tracers fresh so they don't jump or look weird
-    if (lastActiveLineCountRef && i >= lastActiveCount) {
+    if (!suspendSpawning && lastActiveLineCountRef && i >= lastActiveCount) {
       const fresh = makeTracer(
         tracer.id,
         tracer.seedIndex + lineCount,
@@ -1793,28 +1803,30 @@ function drawVectorField(
       tracer.points = fresh.points
     }
 
-    if (stepSeconds > 0 && tracer.dying) {
+    if (stepSeconds > 0 && (tracer.dying || suspendSpawning)) {
       if (tracer.points.length > 1) {
         tracer.points.shift()
       } else {
-        const fresh = makeTracer(
-          tracer.id,
-          tracer.seedIndex + lineCount,
-          aspect,
-          field,
-          t,
-          renderHints,
-          0,
-          0,
-        )
-        tracer.seedIndex = fresh.seedIndex
-        tracer.age = fresh.age
-        tracer.maxAge = fresh.maxAge
-        tracer.targetLength = fresh.targetLength
-        tracer.dying = fresh.dying
-        tracer.points = fresh.points
-        continue
+        if (!suspendSpawning) {
+          const fresh = makeTracer(
+            tracer.id,
+            tracer.seedIndex + lineCount,
+            aspect,
+            field,
+            t,
+            renderHints,
+            0,
+            0,
+          )
+          tracer.seedIndex = fresh.seedIndex
+          tracer.age = fresh.age
+          tracer.maxAge = fresh.maxAge
+          tracer.targetLength = fresh.targetLength
+          tracer.dying = fresh.dying
+          tracer.points = fresh.points
+        }
       }
+      continue
     }
 
     if (tracer.age < 0) {
@@ -2620,6 +2632,7 @@ function App() {
           perfScaleRef.current,
           lastActiveLineCountRef,
           lastActiveParticleCountRef,
+          isDismissing,
         )
       }
     },
@@ -2632,6 +2645,7 @@ function App() {
       selectedPreset,
       showDivergenceEmphasis,
       showFieldArrows,
+      isDismissing,
     ],
   )
 
