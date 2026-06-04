@@ -3968,7 +3968,7 @@ function App() {
                   Credits & Inspiration
                 </h2>
                 <div className="welcome-body">
-                  <p style={{ lineHeight: '1.75' }}>
+                  <p style={{ lineHeight: '1.9' }}>
                     Credit to 3Blue1Brown for his video on{' '}
                     <a
                       href="https://www.youtube.com/watch?v=rB83DpBJQsE"

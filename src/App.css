@@ -1906,11 +1906,12 @@ select {
 .welcome-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: 5px;
+  padding: 1.5px 8px;
+  margin: 1.5px 0;
   border-radius: 999px;
   text-decoration: none;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 650;
   transition: all 180ms ease;
   border: 1px solid transparent;
