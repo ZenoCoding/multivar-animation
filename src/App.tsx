@@ -22,6 +22,8 @@ import {
   Sparkles,
   Trash2,
   MoveUpRight,
+  X,
+  Award,
 } from 'lucide-react'
 import './App.css'
 
@@ -74,7 +76,7 @@ interface SyncedPlacedProbe extends PlacedProbe {
 }
 
 type LabPhase = 'predict' | 'investigate' | 'explain'
-type LabPanelMode = 'intro' | 'question' | 'concept' | 'menu'
+type LabPanelMode = 'intro' | 'question' | 'concept' | 'menu' | 'finished'
 type LessonKind = 'curl' | 'divergence' | 'compare'
 type ProbeMetric = 'curl' | 'divergence' | 'both' | 'vector'
 
@@ -1039,6 +1041,41 @@ function getTracerColorStr(mode: ColorMode, hue: number) {
   return `hsla(${hue}, 78%, 45%, 0.64)`
 }
 
+function getReappearAlpha(
+  x: number,
+  y: number,
+  elapsedSeconds: number,
+  aspect: number,
+  duration = 1.0,
+  fadeDuration = 0.25
+): number {
+  const dMax = 4.1 * Math.hypot(aspect, 1)
+  const d = Math.hypot(x, y)
+  const dNorm = Math.min(1.0, d / dMax)
+
+  // Wave propagates from outside (dNorm = 1) to center (dNorm = 0).
+  const tSpawn = (duration - fadeDuration) * (1.0 - dNorm)
+
+  if (elapsedSeconds < tSpawn) return 0
+  return Math.min(1.0, (elapsedSeconds - tSpawn) / fadeDuration)
+}
+
+function getTracerColorStrWithAlpha(mode: ColorMode, hue: number, alphaMultiplier: number) {
+  const baseAlpha = mode === 'speed' ? 0.66 : 0.64
+  const finalAlpha = baseAlpha * alphaMultiplier
+  if (mode === 'speed') {
+    const speed = (225 - hue) / 40
+    const lightness = 46 + Math.min(12, speed * 3)
+    return `hsla(${hue}, 82%, ${lightness}%, ${finalAlpha})`
+  }
+
+  if (mode === 'angle') {
+    return `hsla(${hue}, 76%, 48%, ${finalAlpha})`
+  }
+
+  return `hsla(${hue}, 78%, 45%, ${finalAlpha})`
+}
+
 const tracerHueGroups = Array.from({ length: 360 }, () => [] as Tracer[])
 
 function getTracerLineColorSample(
@@ -1222,6 +1259,7 @@ function drawParticleField(
   perfScale = 1.0,
   lastActiveParticleCountRef?: React.MutableRefObject<number>,
   suspendSpawning = false,
+  reappearElapsed: number | null = null,
 ) {
   const prepared = prepareCanvas(canvas)
   if (!prepared) return
@@ -1400,29 +1438,81 @@ function drawParticleField(
     lastActiveParticleCountRef.current = activeParticleCount
   }
 
-  // Draw batched particles by hue as line segments
-  let getParticleColorStr: (hue: number) => string
-  if (colorMode === 'speed') {
-    getParticleColorStr = (hue) => `hsla(${hue}, 88%, 53%, 0.9)`
-  } else if (colorMode === 'angle') {
-    getParticleColorStr = (hue) => `hsla(${hue}, 92%, 56%, 0.92)`
-  } else {
-    getParticleColorStr = (hue) => `hsla(${hue}, 68%, 55%, 0.88)`
-  }
-
+  // Draw batched particles by hue as line segments, or individually during reappear transition
   context.lineWidth = particleSize
   context.lineCap = 'round'
-  for (let hue = 0; hue < 360; hue++) {
-    const coords = particleHueGroups[hue]
-    if (coords.length === 0) continue
 
-    context.strokeStyle = getParticleColorStr(hue)
-    context.beginPath()
-    for (let i = 0; i < coords.length; i += 4) {
-      context.moveTo(coords[i], coords[i + 1])
-      context.lineTo(coords[i + 2], coords[i + 3])
+  if (reappearElapsed !== null) {
+    for (let i = 0; i < activeParticleCount; i++) {
+      const particle = particles[i]
+      if (!particle) continue
+
+      if (isInDomain(particle, aspect)) {
+        field(particle.x, particle.y, t, tempV)
+        const speed = Math.hypot(tempV.x, tempV.y)
+        const screenX = originX + particle.x * scale
+        const screenY = originY - particle.y * scale
+        const screenPrevX = originX + particle.px * scale
+        const screenPrevY = originY - particle.py * scale
+
+        const onScreen =
+          (screenX >= -2 && screenX <= width + 2 && screenY >= -2 && screenY <= height + 2) ||
+          (screenPrevX >= -2 && screenPrevX <= width + 2 && screenPrevY >= -2 && screenPrevY <= height + 2)
+
+        if (onScreen) {
+          const reappearAlpha = getReappearAlpha(particle.x, particle.y, reappearElapsed, aspect)
+          if (reappearAlpha <= 0) continue
+
+          const hue = getParticleHue(
+            colorMode,
+            tempV.x,
+            tempV.y,
+            speed,
+            particle.x,
+            particle.y,
+            t,
+            lessonIndex,
+          )
+
+          let colorStr: string
+          if (colorMode === 'speed') {
+            colorStr = `hsla(${hue}, 88%, 53%, ${0.9 * reappearAlpha})`
+          } else if (colorMode === 'angle') {
+            colorStr = `hsla(${hue}, 92%, 56%, ${0.92 * reappearAlpha})`
+          } else {
+            colorStr = `hsla(${hue}, 68%, 55%, ${0.88 * reappearAlpha})`
+          }
+
+          context.strokeStyle = colorStr
+          context.beginPath()
+          context.moveTo(screenPrevX, screenPrevY)
+          context.lineTo(screenX, screenY)
+          context.stroke()
+        }
+      }
     }
-    context.stroke()
+  } else {
+    let getParticleColorStr: (hue: number) => string
+    if (colorMode === 'speed') {
+      getParticleColorStr = (hue) => `hsla(${hue}, 88%, 53%, 0.9)`
+    } else if (colorMode === 'angle') {
+      getParticleColorStr = (hue) => `hsla(${hue}, 92%, 56%, 0.92)`
+    } else {
+      getParticleColorStr = (hue) => `hsla(${hue}, 68%, 55%, 0.88)`
+    }
+
+    for (let hue = 0; hue < 360; hue++) {
+      const coords = particleHueGroups[hue]
+      if (coords.length === 0) continue
+
+      context.strokeStyle = getParticleColorStr(hue)
+      context.beginPath()
+      for (let i = 0; i < coords.length; i += 4) {
+        context.moveTo(coords[i], coords[i + 1])
+        context.lineTo(coords[i + 2], coords[i + 3])
+      }
+      context.stroke()
+    }
   }
 
   if (showFieldArrows) {
@@ -1686,6 +1776,7 @@ function drawVectorField(
   lastActiveLineCountRef?: React.MutableRefObject<number>,
   lastActiveParticleCountRef?: React.MutableRefObject<number>,
   suspendSpawning = false,
+  reappearElapsed: number | null = null,
 ) {
   if (seedingMode === 'particle') {
     drawParticleField(
@@ -1703,6 +1794,7 @@ function drawVectorField(
       perfScale,
       lastActiveParticleCountRef,
       suspendSpawning,
+      reappearElapsed,
     )
     return
   }
@@ -1803,6 +1895,9 @@ function drawVectorField(
     }
 
     if (stepSeconds > 0 && (tracer.dying || suspendSpawning)) {
+      if (suspendSpawning) {
+        tracer.dying = true
+      }
       if (tracer.points.length > 1) {
         tracer.points.shift()
       } else {
@@ -1824,8 +1919,8 @@ function drawVectorField(
           tracer.dying = fresh.dying
           tracer.points = fresh.points
         }
+        continue
       }
-      continue
     }
 
     if (tracer.age < 0) {
@@ -1895,21 +1990,64 @@ function drawVectorField(
     lastActiveLineCountRef.current = activeLineCount
   }
 
-  // Draw batched tracer strokes
+  // Draw batched tracer strokes or individual strokes for reappear transition
   context.lineWidth = 1.55
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
-  for (let hue = 0; hue < 360; hue++) {
-    const group = tracerHueGroups[hue]
-    if (group.length === 0) continue
+  if (reappearElapsed !== null) {
+    const aspect = width / height
+    for (let i = 0; i < activeLineCount; i++) {
+      const tracer = tracers[i]
+      if (!tracer || tracer.points.length < 2) continue
 
-    context.strokeStyle = getTracerColorStr(colorMode, hue)
-    context.beginPath()
-    for (let i = 0; i < group.length; i++) {
-      drawPath(context, group[i].points, toScreen)
+      const startPt = tracer.points[0]
+      const reappearAlpha = getReappearAlpha(startPt.x, startPt.y, reappearElapsed, aspect)
+      if (reappearAlpha <= 0) continue
+
+      const head = tracer.points[tracer.points.length - 1]
+      field(head.x, head.y, t, tempV)
+      const speed = Math.hypot(tempV.x, tempV.y)
+
+      const colorSample = getTracerLineColorSample(
+        colorMode,
+        field,
+        tracer.points,
+        t,
+        tempV.x,
+        tempV.y,
+        speed,
+        tempV,
+        perfScale,
+      )
+
+      const hue = getTracerHue(
+        colorMode,
+        colorSample.vx,
+        colorSample.vy,
+        colorSample.speed,
+        head,
+        t,
+        lessonIndex,
+      )
+
+      context.strokeStyle = getTracerColorStrWithAlpha(colorMode, hue, reappearAlpha)
+      context.beginPath()
+      drawPath(context, tracer.points, toScreen)
+      context.stroke()
     }
-    context.stroke()
+  } else {
+    for (let hue = 0; hue < 360; hue++) {
+      const group = tracerHueGroups[hue]
+      if (group.length === 0) continue
+
+      context.strokeStyle = getTracerColorStr(colorMode, hue)
+      context.beginPath()
+      for (let i = 0; i < group.length; i++) {
+        drawPath(context, group[i].points, toScreen)
+      }
+      context.stroke()
+    }
   }
 
   if (showFieldArrows) {
@@ -2470,6 +2608,8 @@ function App() {
   const transitionFieldOldRef = useRef<Field | null>(null)
   const transitionStartTimeRef = useRef<number | null>(null)
   const previousFieldRef = useRef<Field | null>(null)
+  const lastSuspendSpawningRef = useRef(false)
+  const reappearStartTimeRef = useRef<number | null>(null)
   const initialParams = useMemo(() => getInitialURLParams(), [])
   const [dx, setDx] = useState(initialParams.dx)
   const [dy, setDy] = useState(initialParams.dy)
@@ -2489,6 +2629,16 @@ function App() {
   const [showWelcome, setShowWelcome] = useState(true)
   const [welcomePage, setWelcomePage] = useState(1)
   const [isDismissing, setIsDismissing] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(false)
+  const [reviewExpanded, setReviewExpanded] = useState(false)
+
+  useEffect(() => {
+    if (showConfetti) {
+      const timer = setTimeout(() => setShowConfetti(false), 7000)
+      return () => clearTimeout(timer)
+    }
+  }, [showConfetti])
+
   const exploreBtnRef = useRef<HTMLButtonElement | null>(null)
 
   const dismissWelcome = useCallback(() => {
@@ -2615,6 +2765,23 @@ function App() {
     (time = performance.now(), deltaSeconds = 0) => {
       if (canvasRef.current) {
         const activeField = getTransitionField(time)
+        const currentSuspend = showWelcome || isDismissing || showConfetti
+
+        if (lastSuspendSpawningRef.current && !currentSuspend) {
+          reappearStartTimeRef.current = time
+        }
+        lastSuspendSpawningRef.current = currentSuspend
+
+        let reappearElapsed: number | null = null
+        if (reappearStartTimeRef.current !== null) {
+          const elapsed = (time - reappearStartTimeRef.current) / 1000
+          if (elapsed >= 1.25) {
+            reappearStartTimeRef.current = null
+          } else {
+            reappearElapsed = elapsed
+          }
+        }
+
         drawVectorField(
           canvasRef.current,
           activeField,
@@ -2632,7 +2799,8 @@ function App() {
           perfScaleRef.current,
           lastActiveLineCountRef,
           lastActiveParticleCountRef,
-          isDismissing,
+          currentSuspend,
+          reappearElapsed,
         )
       }
     },
@@ -2645,7 +2813,9 @@ function App() {
       selectedPreset,
       showDivergenceEmphasis,
       showFieldArrows,
+      showWelcome,
       isDismissing,
+      showConfetti,
     ],
   )
 
@@ -2845,6 +3015,7 @@ function App() {
     setPanelCollapsed(false)
     setProbeEnabled(false)
     setPlacedProbes([])
+    setReviewExpanded(false)
     hideProbe()
   }
 
@@ -2958,7 +3129,7 @@ function App() {
       : Math.min(4, Math.abs(primaryProbeValue))
   const probeIntensity = Math.min(1, probeMagnitude / 4)
   const probeLabel =
-    !labStarted || labPhase === 'investigate'
+    (!labStarted || labPhase === 'investigate') && !nearbyMarker
       ? getProbeReadingLabel(activeMetric, probe.curl, probe.divergence)
       : ''
   const probeHue =
@@ -3006,7 +3177,9 @@ function App() {
   const progressLabel =
     panelMode === 'intro' && !hasSeenIntro
       ? 'Intro'
-      : `${activeLesson.shortTitle} ${activeQuestionOrdinal.ordinal}/${activeQuestionOrdinal.total}`
+      : panelMode === 'finished'
+        ? 'Results'
+        : `${activeLesson.shortTitle} ${activeQuestionOrdinal.ordinal}/${activeQuestionOrdinal.total}`
 
   const startLab = () => {
     setLabStarted(true)
@@ -3025,6 +3198,7 @@ function App() {
     setProbeEnabled(false)
     setHasProbeReading(Boolean(answerRecords[0]?.submitted))
     setPlacedProbes([])
+    setReviewExpanded(false)
     hideProbe()
   }
 
@@ -3095,7 +3269,29 @@ function App() {
     setLabPhase('predict')
     setProbeEnabled(false)
     setHasProbeReading(false)
+    setReviewExpanded(false)
     hideProbe()
+  }
+
+  const debugFinish = () => {
+    const debugRecords: Record<number, AnswerRecord> = {}
+    labQuestions.forEach((q, idx) => {
+      debugRecords[idx] = {
+        selectedOption: q.answer,
+        submitted: true,
+        correct: true,
+      }
+    })
+    setAnswerRecords(debugRecords)
+    setActiveQuestionIndex(labQuestions.length - 1)
+    const lastQuestion = labQuestions[labQuestions.length - 1]
+    setDx(lastQuestion.field.dx)
+    setDy(lastQuestion.field.dy)
+    setLabPhase('explain')
+    setHasProbeReading(true)
+    setProbeEnabled(false)
+    hideProbe()
+    setPanelMode('question')
   }
 
   const goToQuestion = (index: number) => {
@@ -3120,7 +3316,12 @@ function App() {
   }
 
   const goToNextQuestion = () => {
-    goToQuestion((activeQuestionIndex + 1) % labQuestions.length)
+    if (activeQuestionIndex === labQuestions.length - 1) {
+      setPanelMode('finished')
+      setShowConfetti(true)
+    } else {
+      goToQuestion(activeQuestionIndex + 1)
+    }
   }
 
   return (
@@ -3440,7 +3641,7 @@ function App() {
           <div
             className={`metric-probe metric-probe-${activeMetric}`}
             style={probeStyle}
-            data-reading={activeMetric === 'both' || activeMetric === 'vector' ? '' : probeLabel}
+            data-reading={activeMetric === 'both' || activeMetric === 'vector' || !probeLabel ? undefined : probeLabel}
             aria-hidden="true"
           >
             {activeMetric === 'divergence' ? (
@@ -3455,10 +3656,12 @@ function App() {
                   </svg>
                 </span>
                 <span className="divergence-probe-blob" />
-                <span className="comparison-probe-readout">
-                  <em>curl: {formatCompactValue(probe.curl)}</em>
-                  <em>div: {formatCompactValue(probe.divergence)}</em>
-                </span>
+                {!nearbyMarker && (
+                  <span className="comparison-probe-readout">
+                    <em>curl: {formatCompactValue(probe.curl)}</em>
+                    <em>div: {formatCompactValue(probe.divergence)}</em>
+                  </span>
+                )}
               </>
             ) : activeMetric === 'vector' ? (
               <>
@@ -3488,20 +3691,22 @@ function App() {
                     </svg>
                   )
                 })()}
-                <span className="vector-probe-readout">
-                  <span className="vector-readout-item">
-                    <strong>Pos:</strong> ({probe.fieldX.toFixed(2)}, {probe.fieldY.toFixed(2)})
+                {!nearbyMarker && (
+                  <span className="vector-probe-readout">
+                    <span className="vector-readout-item">
+                      <strong>Pos:</strong> ({probe.fieldX.toFixed(2)}, {probe.fieldY.toFixed(2)})
+                    </span>
+                    <span className="vector-readout-item">
+                      <strong>Vel:</strong> ({probe.vx.toFixed(2)}, {probe.vy.toFixed(2)})
+                    </span>
+                    <span className="vector-readout-item">
+                      <strong>Curl:</strong> {probe.curl.toFixed(2)}
+                    </span>
+                    <span className="vector-readout-item">
+                      <strong>Div:</strong> {probe.divergence.toFixed(2)}
+                    </span>
                   </span>
-                  <span className="vector-readout-item">
-                    <strong>Vel:</strong> ({probe.vx.toFixed(2)}, {probe.vy.toFixed(2)})
-                  </span>
-                  <span className="vector-readout-item">
-                    <strong>Curl:</strong> {probe.curl.toFixed(2)}
-                  </span>
-                  <span className="vector-readout-item">
-                    <strong>Div:</strong> {probe.divergence.toFixed(2)}
-                  </span>
-                </span>
+                )}
               </>
             ) : (
               <CurlProbeIcon framed={false} mirrored={probe.curl >= 0} />
@@ -3634,31 +3839,102 @@ function App() {
         })}
 
         {!labStarted ? (
-          <button
-            type="button"
-            className="lab-panel-collapsed lab-start-entry"
-            onClick={openLabIntro}
-            aria-label="Start guided lab"
-          >
-            <span>
-              <strong>Guided Lab</strong>
-              <em>Start</em>
-            </span>
-            <ArrowRight aria-hidden="true" />
-          </button>
+          answeredCount === 0 ? (
+            <button
+              type="button"
+              className="lab-panel-collapsed lab-start-entry"
+              onClick={openLabIntro}
+              aria-label="Start guided lab"
+            >
+              <span>
+                <strong>Guided Lab</strong>
+                <em>Start</em>
+              </span>
+              <ArrowRight aria-hidden="true" />
+            </button>
+          ) : (
+            <div className="lab-panel-collapsed lab-progress-card" role="region" aria-label="Guided lab progress">
+              <div className="lab-progress-info" onClick={openLabIntro} title="Click to open intro/restart">
+                <strong>Guided Lab</strong>
+                <div className="lab-progress-bar-container">
+                  <div
+                    className="lab-progress-bar"
+                    style={{ width: `${(answeredCount / labQuestions.length) * 100}%` }}
+                  />
+                </div>
+                <em>
+                  {answeredCount === labQuestions.length
+                    ? 'Completed! 🎉'
+                    : `${answeredCount} / ${labQuestions.length} Completed`}
+                </em>
+              </div>
+              <div className="lab-progress-actions">
+                <button
+                  type="button"
+                  className="lab-progress-action-btn"
+                  onClick={() => {
+                    setLabStarted(true)
+                    setPanelMode('finished')
+                    setPanelCollapsed(false)
+                  }}
+                  title="View Results"
+                  aria-label="View Results"
+                >
+                  <ListChecks size={16} />
+                </button>
+                {answeredCount < labQuestions.length && (
+                  <button
+                    type="button"
+                    className="lab-progress-action-btn"
+                    onClick={() => {
+                      const firstUnanswered = labQuestions.findIndex((_, idx) => !answerRecords[idx]?.submitted)
+                      goToQuestion(firstUnanswered !== -1 ? firstUnanswered : 0)
+                    }}
+                    title="Resume Lab"
+                    aria-label="Resume Lab"
+                  >
+                    <ArrowRight size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )
         ) : panelCollapsed ? (
-          <button
-            type="button"
-            className="lab-panel-collapsed"
-            onClick={() => setPanelCollapsed(false)}
-            aria-label="Expand lab panel"
-          >
-            <span>
+          <div className="lab-panel-collapsed lab-progress-card" role="region" aria-label="Guided lab progress (collapsed)">
+            <div className="lab-progress-info" onClick={() => setPanelCollapsed(false)} style={{ cursor: 'pointer' }} title="Click to expand lab panel">
               <strong>{labTitle}</strong>
-              <em>{progressLabel}</em>
-            </span>
-            <ChevronUp aria-hidden="true" />
-          </button>
+              <div className="lab-progress-bar-container">
+                <div
+                  className="lab-progress-bar"
+                  style={{ width: `${(answeredCount / labQuestions.length) * 100}%` }}
+                />
+              </div>
+              <em style={{ textTransform: 'none', fontStyle: 'normal' }}>{progressLabel}</em>
+            </div>
+            <div className="lab-progress-actions">
+              <button
+                type="button"
+                className="lab-progress-action-btn tooltip-top"
+                onClick={() => {
+                  setLabStarted(false)
+                  setPanelCollapsed(false)
+                }}
+                aria-label="Exit Lab"
+                data-tooltip="Exit Lab"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="lab-progress-action-btn tooltip-top"
+                onClick={() => setPanelCollapsed(false)}
+                aria-label="Expand lab panel"
+                data-tooltip="Expand lab panel"
+              >
+                <ChevronUp size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
         ) : (
           <aside className="lab-panel" aria-label="Guided lab panel">
             <div className="lab-panel-header">
@@ -3710,6 +3986,18 @@ function App() {
                 >
                   <ChevronDown aria-hidden="true" />
                 </button>
+                <button
+                  type="button"
+                  className="lab-icon-button tooltip-bottom lab-exit-button"
+                  onClick={() => {
+                    setLabStarted(false)
+                    setPanelCollapsed(false)
+                  }}
+                  aria-label="Exit lab to playground"
+                  data-tooltip="Exit lab to playground"
+                >
+                  <X aria-hidden="true" />
+                </button>
               </div>
             </div>
 
@@ -3734,17 +4022,28 @@ function App() {
               <div className="lab-menu">
                 <div className="lab-menu-summary">
                   <span>{answeredCount} submitted</span>
-                  {answeredCount > 0 && (
+                  <div className="lab-menu-summary-actions">
                     <button
                       type="button"
-                      className="lab-reset-all-button"
-                      onClick={resetAllAnswers}
-                      title="Reset all tutorial answers"
+                      className="lab-debug-btn"
+                      onClick={debugFinish}
+                      title="Instantly solve all lab questions to test completion"
                     >
-                      <RotateCcw aria-hidden="true" />
-                      Reset All
+                      <Sparkles aria-hidden="true" />
+                      Debug Finish
                     </button>
-                  )}
+                    {answeredCount > 0 && (
+                      <button
+                        type="button"
+                        className="lab-reset-all-button"
+                        onClick={resetAllAnswers}
+                        title="Reset all tutorial answers"
+                      >
+                        <RotateCcw aria-hidden="true" />
+                        Reset All
+                      </button>
+                    )}
+                  </div>
                   <strong>{labQuestions.length} questions</strong>
                 </div>
                 <button
@@ -3808,6 +4107,135 @@ function App() {
                       </div>
                     )
                   })}
+              </div>
+            ) : panelMode === 'finished' ? (
+              <div className="lab-finished-panel">
+                <div className="congrats-header">
+                  <Award className="congrats-badge-icon" />
+                  <h2>Congratulations!</h2>
+                  <p className="congrats-subtitle">You completed all vector labs!</p>
+                </div>
+
+                <div className="score-summary-box">
+                  <div className="score-circle-container">
+                    <svg className="score-ring-svg" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="42" className="score-ring-bg" />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        className="score-ring-fill"
+                        style={{
+                          strokeDasharray: `${2 * Math.PI * 42}`,
+                          strokeDashoffset: `${2 * Math.PI * 42 * (1 - Object.values(answerRecords).filter((r) => r.submitted && r.correct).length / labQuestions.length)}`,
+                        }}
+                      />
+                    </svg>
+                    {(() => {
+                      const correctCount = Object.values(answerRecords).filter((record) => record.submitted && record.correct).length
+                      const totalCount = labQuestions.length
+                      const percent = Math.round((correctCount / totalCount) * 100)
+                      return (
+                        <div className="score-text">
+                          <strong>{percent}%</strong>
+                          <span>{correctCount}/{totalCount} Right</span>
+                        </div>
+                      )
+                    })()}
+                  </div>
+
+                  <div className="section-breakdown">
+                    {lessonSections
+                      .filter((section) => section.kind !== 'intro')
+                      .map((section) => {
+                        const qList = getLessonQuestions(section.kind as LessonKind)
+                        const correctInSection = qList.filter(
+                          ({ index }) => answerRecords[index]?.submitted && answerRecords[index]?.correct
+                        ).length
+                        return (
+                          <div key={section.kind} className="breakdown-item">
+                            <span>{section.shortTitle || section.title}</span>
+                            <strong>{correctInSection}/{qList.length}</strong>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="review-collapse-trigger"
+                  onClick={() => setReviewExpanded((prev) => !prev)}
+                  aria-expanded={reviewExpanded}
+                >
+                  <span>Question Review</span>
+                  {reviewExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+
+                {reviewExpanded && (
+                  <div className="review-questions-list">
+                    {lessonSections
+                      .filter((section) => section.kind !== 'intro')
+                      .map((section) => {
+                        const qList = getLessonQuestions(section.kind as LessonKind)
+                        return (
+                          <div key={section.kind} className="finished-section-group">
+                            <h4>{section.title}</h4>
+                            {qList.map(({ question, index }, qIdx) => {
+                              const record = answerRecords[index]
+                              const isCorrect = record?.submitted && record.correct
+                              const isIncorrect = record?.submitted && !record.correct
+                              const statusClass = isCorrect ? 'correct' : isIncorrect ? 'incorrect' : 'empty'
+
+                              return (
+                                <div key={index} className={`review-question-row status-${statusClass}`}>
+                                  <div className="row-info">
+                                    <span className="row-num">{qIdx + 1}</span>
+                                    <div className="row-text">
+                                      <strong>{question.title}</strong>
+                                      <p style={{ fontSize: '11.5px', margin: 0 }}>{question.prompt}</p>
+                                      {record?.submitted && (
+                                        <span className="row-answers" style={{ fontSize: '10px', marginTop: '2px' }}>
+                                          Answered: <em>{record.selectedOption}</em>
+                                          {isIncorrect && <> (Correct: <em>{question.answer}</em>)</>}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="row-action">
+                                    <button
+                                      type="button"
+                                      className="row-review-btn"
+                                      onClick={() => goToQuestion(index)}
+                                    >
+                                      Review
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
+                  </div>
+                )}
+
+                <div className="finished-footer">
+                  <button type="button" className="results-secondary-btn" onClick={resetAllAnswers}>
+                    <RotateCcw size={13} />
+                    <span>Restart Labs</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="results-primary-btn"
+                    onClick={() => {
+                      setLabStarted(false)
+                      setPanelCollapsed(false)
+                    }}
+                  >
+                    <span>Exit Lab</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="lab-question">
@@ -3911,7 +4339,7 @@ function App() {
                         className="lab-primary-button"
                         onClick={goToNextQuestion}
                       >
-                        Next
+                        {activeQuestionIndex === labQuestions.length - 1 ? 'Finish' : 'Next'}
                         <ArrowRight aria-hidden="true" />
                       </button>
                     </div>
@@ -3936,7 +4364,7 @@ function App() {
         >
           <ExplosionCanvas
             active={isDismissing}
-            buttonElement={exploreBtnRef.current}
+            buttonRef={exploreBtnRef}
             onComplete={handleExplosionComplete}
             colorMode={colorMode}
             activeQuestionIndex={activeQuestionIndex}
@@ -4042,6 +4470,13 @@ function App() {
           </div>
         </div>
       )}
+      {showConfetti && (
+        <FireworksCanvas
+          active={showConfetti}
+          colorMode={colorMode}
+          activeQuestionIndex={activeQuestionIndex}
+        />
+      )}
     </main>
   )
 }
@@ -4132,20 +4567,272 @@ const GitHubIcon = () => (
   </svg>
 )
 
-interface ExplosionCanvasProps {
+interface FireworksCanvasProps {
   active: boolean
-  buttonElement: HTMLButtonElement | null
-  onComplete: () => void
   colorMode: ColorMode
   activeQuestionIndex: number
 }
 
-function ExplosionCanvas({ active, buttonElement, onComplete, colorMode, activeQuestionIndex }: ExplosionCanvasProps) {
+function FireworksCanvas({ active, colorMode, activeQuestionIndex }: FireworksCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     if (!active) return
 
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const context = canvas.getContext('2d')
+    if (!context) return
+
+    const resizeCanvas = () => {
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+    }
+    resizeCanvas()
+    window.addEventListener('resize', resizeCanvas)
+
+    const width = window.innerWidth
+    const height = window.innerHeight
+    const originX = width / 2
+    const originY = height / 2
+    const scale = Math.min(width, height) / 8.2
+    const aspect = width / height
+
+    const toScreen = (point: Vector) => ({
+      x: originX + point.x * scale,
+      y: originY - point.y * scale,
+    })
+
+    const fromScreen = (sx: number, sy: number) => ({
+      x: (sx - originX) / scale,
+      y: (originY - sy) / scale,
+    })
+
+    type FireworkBurst = {
+      cx: number
+      cy: number
+      hue: number
+      startTime: number
+      duration: number
+      vortexSpeed: number
+    }
+
+    type FireworksTracer = {
+      points: Vector[]
+      age: number
+      maxAge: number
+      targetLength: number
+      dying: boolean
+      alpha: number
+      seedAngle: number
+      burstIndex: number
+    }
+
+    const bursts: FireworkBurst[] = []
+    const tracers: FireworksTracer[] = []
+
+    const colors = [340, 45, 120, 200, 260, 290] // vibrant hues
+
+    const createBurst = (sx: number, sy: number, hue: number, timeNow: number) => {
+      const p = fromScreen(sx, sy)
+      const burstIdx = bursts.length
+      bursts.push({
+        cx: p.x,
+        cy: p.y,
+        hue,
+        startTime: timeNow,
+        duration: 1.8,
+        vortexSpeed: (Math.random() - 0.5) > 0 ? 3.5 : -3.5,
+      })
+
+      // Spawn 32 streamlines shooting outwards in a spiral
+      for (let i = 0; i < 32; i++) {
+        const angle = (i / 32) * Math.PI * 2 + (Math.random() - 0.5) * 0.1
+        const offset = 0.02
+        const startPoint = {
+          x: p.x + Math.cos(angle) * offset,
+          y: p.y + Math.sin(angle) * offset,
+        }
+
+        tracers.push({
+          points: [startPoint],
+          age: 0,
+          maxAge: 1.0 + Math.random() * 0.6, // 1.0s to 1.6s
+          targetLength: 20 + Math.floor(Math.random() * 10),
+          dying: false,
+          alpha: 1.0,
+          seedAngle: angle,
+          burstIndex: burstIdx,
+        })
+      }
+    }
+
+    const fireworkField = (x: number, y: number, b: FireworkBurst, seedAngle: number) => {
+      const dx = x - b.cx
+      const dy = y - b.cy
+      const dist = Math.hypot(dx, dy) || 0.0001
+
+      // Fast initial explosion, decaying with distance
+      const radialSpeed = 6.8 / (dist * 1.5 + 0.6)
+      // Swirling vortex that creates spiral arms
+      const swirlSpeed = b.vortexSpeed / (dist + 0.5)
+      // Wave ripple oscillation
+      const wave = Math.sin(dist * 5.0) * 0.4
+
+      return {
+        x: Math.cos(seedAngle) * radialSpeed - dy * swirlSpeed + Math.sin(y) * wave,
+        y: Math.sin(seedAngle) * radialSpeed + dx * swirlSpeed + Math.cos(x) * wave,
+      }
+    }
+
+    let animationId: number
+    let lastTime = performance.now()
+    const startTime = lastTime
+
+    // Spawn initial burst at center
+    createBurst(width / 2, height * 0.45, colors[0], 0)
+
+    // Schedule 5 more bursts at random positions
+    const burstSchedule = [
+      { delay: 800, x: width * 0.3, y: height * 0.35, hue: colors[1] },
+      { delay: 1600, x: width * 0.7, y: height * 0.35, hue: colors[2] },
+      { delay: 2400, x: width * 0.5, y: height * 0.25, hue: colors[3] },
+      { delay: 3200, x: width * 0.4, y: height * 0.45, hue: colors[4] },
+      { delay: 4000, x: width * 0.6, y: height * 0.45, hue: colors[5] },
+    ]
+    let scheduleIndex = 0
+
+    const drawPathLocal = (pts: Vector[]) => {
+      let previousScreen: Vector | null = null
+      pts.forEach((point, pointIndex) => {
+        const screen = toScreen(point)
+        if (
+          pointIndex === 0 ||
+          !previousScreen ||
+          Math.hypot(screen.x - previousScreen.x, screen.y - previousScreen.y) > 42
+        ) {
+          context.moveTo(screen.x, screen.y)
+        } else {
+          context.lineTo(screen.x, screen.y)
+        }
+        previousScreen = screen
+      })
+    }
+
+    const tick = (now: number) => {
+      const dt = Math.min(0.03, (now - lastTime) / 1000)
+      lastTime = now
+
+      const elapsedMs = now - startTime
+
+      // Check schedule
+      if (scheduleIndex < burstSchedule.length && elapsedMs >= burstSchedule[scheduleIndex].delay) {
+        const b = burstSchedule[scheduleIndex]
+        createBurst(b.x, b.y, b.hue, elapsedMs / 1000)
+        scheduleIndex++
+      }
+
+      context.clearRect(0, 0, canvas.width, canvas.height)
+
+      context.lineWidth = 1.8
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
+
+      for (let i = 0; i < tracers.length; i++) {
+        const t = tracers[i]
+        if (t.alpha <= 0) {
+          tracers.splice(i, 1)
+          i--
+          continue
+        }
+
+        const b = bursts[t.burstIndex]
+
+        if (!t.dying) {
+          t.age += dt
+
+          const head = t.points[t.points.length - 1]
+          const v = fireworkField(head.x, head.y, b, t.seedAngle)
+
+          const next = {
+            x: head.x + v.x * dt,
+            y: head.y + v.y * dt,
+          }
+
+          t.points.push(next)
+
+          if (t.age >= t.maxAge) {
+            t.dying = true
+          }
+        } else {
+          t.alpha -= dt * 2.2
+          if (t.points.length > 1) {
+            t.points.shift()
+          }
+        }
+
+        while (t.points.length > t.targetLength) {
+          t.points.shift()
+        }
+
+        const pts = t.points
+        if (pts.length >= 2) {
+          const head = pts[pts.length - 1]
+          const v = fireworkField(head.x, head.y, b, t.seedAngle)
+          const speed = Math.hypot(v.x, v.y)
+
+          const tracerHue = (b.hue + speed * 12 + t.seedAngle * 10) % 360
+
+          const reappearAlpha = getReappearAlpha(head.x, head.y, elapsedMs / 1000, aspect)
+          context.strokeStyle = `hsla(${tracerHue}, 90%, 55%, ${0.72 * t.alpha * reappearAlpha})`
+          context.beginPath()
+          drawPathLocal(pts)
+          context.stroke()
+        }
+      }
+
+      animationId = requestAnimationFrame(tick)
+    }
+
+    animationId = requestAnimationFrame(tick)
+
+    return () => {
+      cancelAnimationFrame(animationId)
+      window.removeEventListener('resize', resizeCanvas)
+    }
+  }, [active, colorMode, activeQuestionIndex])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
+        pointerEvents: 'none',
+        zIndex: 10006,
+      }}
+    />
+  )
+}
+
+interface ExplosionCanvasProps {
+  active: boolean
+  buttonRef: React.RefObject<HTMLButtonElement | null>
+  onComplete: () => void
+  colorMode: ColorMode
+  activeQuestionIndex: number
+}
+
+function ExplosionCanvas({ active, buttonRef, onComplete, colorMode, activeQuestionIndex }: ExplosionCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    if (!active) return
+
+    const buttonElement = buttonRef.current
     if (!canvasRef.current || !buttonElement) {
       onComplete()
       return
@@ -4339,7 +5026,7 @@ function ExplosionCanvas({ active, buttonElement, onComplete, colorMode, activeQ
       cancelAnimationFrame(animationId)
       window.removeEventListener('resize', resizeCanvas)
     }
-  }, [active, buttonElement, onComplete, colorMode, activeQuestionIndex])
+  }, [active, buttonRef, onComplete, colorMode, activeQuestionIndex])
 
   return (
     <canvas
