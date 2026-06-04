@@ -22,6 +22,7 @@ import {
   Sparkles,
   Waves,
   Trash2,
+  MoveUpRight,
 } from 'lucide-react'
 import './App.css'
 
@@ -48,6 +49,10 @@ type Particle = {
 type ProbeState = {
   x: number
   y: number
+  fieldX: number
+  fieldY: number
+  vx: number
+  vy: number
   curl: number
   divergence: number
   visible: boolean
@@ -63,6 +68,8 @@ interface PlacedProbe {
 interface SyncedPlacedProbe extends PlacedProbe {
   x: number
   y: number
+  vx: number
+  vy: number
   curl: number
   divergence: number
 }
@@ -70,7 +77,7 @@ interface SyncedPlacedProbe extends PlacedProbe {
 type LabPhase = 'predict' | 'investigate' | 'explain'
 type LabPanelMode = 'intro' | 'question' | 'concept' | 'menu'
 type LessonKind = 'curl' | 'divergence' | 'compare'
-type ProbeMetric = 'curl' | 'divergence' | 'both'
+type ProbeMetric = 'curl' | 'divergence' | 'both' | 'vector'
 
 type Marker = {
   label: string
@@ -1041,6 +1048,7 @@ function getTracerLineColorSample(
   fallbackVectorY: number,
   fallbackSpeed: number,
   tempV: Vector,
+  perfScale = 1.0,
 ) {
   if (mode !== 'speed') {
     return { vx: fallbackVectorX, vy: fallbackVectorY, speed: fallbackSpeed }
@@ -1049,7 +1057,13 @@ function getTracerLineColorSample(
   let vx = fallbackVectorX
   let vy = fallbackVectorY
   let speed = Number.isFinite(fallbackSpeed) ? fallbackSpeed : 0
-  const stride = Math.max(1, Math.floor(points.length / 12))
+  
+  const maxSamples = perfScale < 0.5 ? 1 : perfScale < 0.85 ? 3 : 6
+  if (maxSamples <= 1) {
+    return { vx, vy, speed }
+  }
+
+  const stride = Math.max(1, Math.floor(points.length / maxSamples))
 
   for (let index = 0; index < points.length; index += stride) {
     const point = points[index]
@@ -1141,18 +1155,16 @@ function drawGrid(
 ) {
   context.lineWidth = 1
   context.strokeStyle = `rgba(232, 238, 242, ${alpha})`
+  context.beginPath()
   for (let x = originX % scale; x < width; x += scale) {
-    context.beginPath()
     context.moveTo(x, 0)
     context.lineTo(x, height)
-    context.stroke()
   }
   for (let y = originY % scale; y < height; y += scale) {
-    context.beginPath()
     context.moveTo(0, y)
     context.lineTo(width, y)
-    context.stroke()
   }
+  context.stroke()
 
   context.strokeStyle = `rgba(207, 219, 226, ${alpha})`
   context.beginPath()
@@ -1205,6 +1217,8 @@ function drawParticleField(
   showFieldArrows: boolean,
   showDivergenceEmphasis: boolean,
   renderHints?: FieldRenderHints,
+  perfScale = 1.0,
+  lastActiveParticleCountRef?: React.MutableRefObject<number>,
 ) {
   const prepared = prepareCanvas(canvas)
   if (!prepared) return
@@ -1218,6 +1232,9 @@ function drawParticleField(
 
   if (shouldReset) {
     particles.splice(0, particles.length, ...resetParticles(particleCount, aspect))
+    if (lastActiveParticleCountRef) {
+      lastActiveParticleCountRef.current = 0
+    }
   }
 
   if (shouldReset) {
@@ -1238,6 +1255,7 @@ function drawParticleField(
       t,
       time,
       renderHints?.divergenceFeatures,
+      perfScale,
     )
   }
 
@@ -1258,8 +1276,23 @@ function drawParticleField(
   const k3 = { x: 0, y: 0 }
   const k4 = { x: 0, y: 0 }
 
+  const activeParticleCount = Math.round(particleCount * perfScale)
+  const lastActiveCount = lastActiveParticleCountRef ? lastActiveParticleCountRef.current : 0
+
   context.globalCompositeOperation = 'source-over'
-  for (const particle of particles) {
+  for (let i = 0; i < activeParticleCount; i++) {
+    const particle = particles[i]
+    if (!particle) continue
+
+    // Seed newly activated particles fresh so they don't jump from old stale coordinates
+    if (lastActiveParticleCountRef && i >= lastActiveCount) {
+      const fresh = makeParticle(particle.id, aspect)
+      particle.x = fresh.x
+      particle.y = fresh.y
+      particle.px = fresh.x
+      particle.py = fresh.y
+    }
+
     if (isInDomain(particle, aspect)) {
       field(particle.x, particle.y, t, tempV)
       const speed = Math.hypot(tempV.x, tempV.y)
@@ -1298,21 +1331,44 @@ function drawParticleField(
       continue
     }
 
-    // Inlined Runge-Kutta RK4 step with zero object allocations
-    field(particle.x, particle.y, t, tempV)
-    clampParticleVelocityOut(tempV.x, tempV.y, k1)
+    // Adaptive integration based on performance scale to reduce field evaluation load
+    let nextX: number
+    let nextY: number
 
-    field(particle.x + k1.x * h * 0.5, particle.y + k1.y * h * 0.5, t, tempV)
-    clampParticleVelocityOut(tempV.x, tempV.y, k2)
+    if (perfScale >= 0.75) {
+      // Inlined Runge-Kutta RK4 step with zero object allocations (4 field calls)
+      field(particle.x, particle.y, t, tempV)
+      clampParticleVelocityOut(tempV.x, tempV.y, k1)
 
-    field(particle.x + k2.x * h * 0.5, particle.y + k2.y * h * 0.5, t, tempV)
-    clampParticleVelocityOut(tempV.x, tempV.y, k3)
+      field(particle.x + k1.x * h * 0.5, particle.y + k1.y * h * 0.5, t, tempV)
+      clampParticleVelocityOut(tempV.x, tempV.y, k2)
 
-    field(particle.x + k3.x * h, particle.y + k3.y * h, t, tempV)
-    clampParticleVelocityOut(tempV.x, tempV.y, k4)
+      field(particle.x + k2.x * h * 0.5, particle.y + k2.y * h * 0.5, t, tempV)
+      clampParticleVelocityOut(tempV.x, tempV.y, k3)
 
-    const nextX = particle.x + (k1.x + k2.x * 2 + k3.x * 2 + k4.x) * (h / 6)
-    const nextY = particle.y + (k1.y + k2.y * 2 + k3.y * 2 + k4.y) * (h / 6)
+      field(particle.x + k3.x * h, particle.y + k3.y * h, t, tempV)
+      clampParticleVelocityOut(tempV.x, tempV.y, k4)
+
+      nextX = particle.x + (k1.x + k2.x * 2 + k3.x * 2 + k4.x) * (h / 6)
+      nextY = particle.y + (k1.y + k2.y * 2 + k3.y * 2 + k4.y) * (h / 6)
+    } else if (perfScale >= 0.4) {
+      // Midpoint method RK2 (2 field calls)
+      field(particle.x, particle.y, t, tempV)
+      clampParticleVelocityOut(tempV.x, tempV.y, k1)
+
+      field(particle.x + k1.x * h * 0.5, particle.y + k1.y * h * 0.5, t, tempV)
+      clampParticleVelocityOut(tempV.x, tempV.y, k2)
+
+      nextX = particle.x + k2.x * h
+      nextY = particle.y + k2.y * h
+    } else {
+      // Euler method (1 field call)
+      field(particle.x, particle.y, t, tempV)
+      clampParticleVelocityOut(tempV.x, tempV.y, k1)
+
+      nextX = particle.x + k1.x * h
+      nextY = particle.y + k1.y * h
+    }
 
     tempV.x = nextX
     tempV.y = nextY
@@ -1328,6 +1384,10 @@ function drawParticleField(
       particle.px = fresh.x
       particle.py = fresh.y
     }
+  }
+
+  if (lastActiveParticleCountRef) {
+    lastActiveParticleCountRef.current = activeParticleCount
   }
 
   // Draw batched particles by hue as line segments
@@ -1356,7 +1416,7 @@ function drawParticleField(
   }
 
   if (showFieldArrows) {
-    drawFieldArrows(context, width, height, originX, originY, scale, field, t)
+    drawFieldArrows(context, width, height, originX, originY, scale, field, t, perfScale)
   }
 }
 
@@ -1369,6 +1429,7 @@ function drawFieldArrows(
   scale: number,
   field: Field,
   t: number,
+  perfScale = 1.0,
 ) {
   const xMin = Math.ceil(-originX / scale)
   const xMax = Math.floor((width - originX) / scale)
@@ -1382,9 +1443,10 @@ function drawFieldArrows(
 
   const arrowHeads: number[] = []
   const tempV = { x: 0, y: 0 }
+  const step = perfScale < 0.6 ? 2 : 1
 
-  for (let x = xMin; x <= xMax; x += 1) {
-    for (let y = yMin; y <= yMax; y += 1) {
+  for (let x = xMin; x <= xMax; x += step) {
+    for (let y = yMin; y <= yMax; y += step) {
       const sx = originX + x * scale
       const sy = originY - y * scale
       field(x, y, t, tempV)
@@ -1423,11 +1485,11 @@ function drawFieldArrows(
   context.fill()
 }
 
-function findDivergenceFeatures(field: Field, aspect: number, t: number): DivergenceFeature[] {
+function findDivergenceFeatures(field: Field, aspect: number, t: number, perfScale = 1.0): DivergenceFeature[] {
   const xLimit = visibleHalfRange * aspect
   const yLimit = visibleHalfRange
-  const xSteps = 17
-  const ySteps = 13
+  const xSteps = perfScale < 0.6 ? 11 : 17
+  const ySteps = perfScale < 0.6 ? 9 : 13
   const candidates: DivergenceFeature[] = []
   let total = 0
   let count = 0
@@ -1526,6 +1588,7 @@ function drawDivergenceEmphasis(
   t: number,
   timeMs: number,
   divergenceFeatures?: DivergenceFeature[],
+  perfScale = 1.0,
 ) {
   let features = divergenceFeatures
   if (!features) {
@@ -1543,10 +1606,10 @@ function drawDivergenceEmphasis(
     const shouldRecompute =
       fieldChanged ||
       aspectChanged ||
-      (!cachedFieldIsStatic && timeMs - lastDivergenceCalcTime > 250)
+      (!cachedFieldIsStatic && timeMs - lastDivergenceCalcTime > (perfScale < 0.6 ? 800 : 250))
 
     if (shouldRecompute) {
-      cachedDivergenceFeatures = findDivergenceFeatures(field, aspect, t)
+      cachedDivergenceFeatures = findDivergenceFeatures(field, aspect, t, perfScale)
       cachedDivergenceAspect = aspect
       lastDivergenceCalcTime = timeMs
     }
@@ -1609,6 +1672,9 @@ function drawVectorField(
   showFieldArrows: boolean,
   showDivergenceEmphasis: boolean,
   renderHints?: FieldRenderHints,
+  perfScale = 1.0,
+  lastActiveLineCountRef?: React.MutableRefObject<number>,
+  lastActiveParticleCountRef?: React.MutableRefObject<number>,
 ) {
   if (seedingMode === 'particle') {
     drawParticleField(
@@ -1623,6 +1689,8 @@ function drawVectorField(
       showFieldArrows,
       showDivergenceEmphasis,
       renderHints,
+      perfScale,
+      lastActiveParticleCountRef,
     )
     return
   }
@@ -1668,16 +1736,21 @@ function drawVectorField(
       t,
       time,
       renderHints?.divergenceFeatures,
+      perfScale,
     )
   }
 
   const lineCount = lineCountForWidth(width, density)
-  if (tracers.length !== lineCount) {
+  const shouldResetTracers = tracers.length !== lineCount
+  if (shouldResetTracers) {
     tracers.splice(
       0,
       tracers.length,
       ...resetTracers(lineCount, aspect, field, t, renderHints),
     )
+    if (lastActiveLineCountRef) {
+      lastActiveLineCountRef.current = 0
+    }
   }
 
   // Clear pre-allocated hue groups
@@ -1689,8 +1762,34 @@ function drawVectorField(
   const tempV = { x: 0, y: 0 }
   const vector = { x: 0, y: 0 }
 
+  const activeLineCount = Math.round(lineCount * perfScale)
+  const lastActiveCount = lastActiveLineCountRef ? lastActiveLineCountRef.current : 0
+
   const stepSeconds = Math.min(0.045, Math.max(0, deltaSeconds))
-  for (const tracer of tracers) {
+  for (let i = 0; i < activeLineCount; i++) {
+    const tracer = tracers[i]
+    if (!tracer) continue
+
+    // Re-seed newly activated tracers fresh so they don't jump or look weird
+    if (lastActiveLineCountRef && i >= lastActiveCount) {
+      const fresh = makeTracer(
+        tracer.id,
+        tracer.seedIndex + lineCount,
+        aspect,
+        field,
+        t,
+        renderHints,
+        0,
+        0,
+      )
+      tracer.seedIndex = fresh.seedIndex
+      tracer.age = fresh.age
+      tracer.maxAge = fresh.maxAge
+      tracer.targetLength = fresh.targetLength
+      tracer.dying = fresh.dying
+      tracer.points = fresh.points
+    }
+
     if (stepSeconds > 0 && tracer.dying) {
       if (tracer.points.length > 1) {
         tracer.points.shift()
@@ -1762,6 +1861,7 @@ function drawVectorField(
       tempV.y,
       speed,
       tempV,
+      perfScale,
     )
 
     const hue = getTracerHue(
@@ -1775,6 +1875,10 @@ function drawVectorField(
     )
 
     tracerHueGroups[hue].push(tracer)
+  }
+
+  if (lastActiveLineCountRef) {
+    lastActiveLineCountRef.current = activeLineCount
   }
 
   // Draw batched tracer strokes
@@ -1795,7 +1899,7 @@ function drawVectorField(
   }
 
   if (showFieldArrows) {
-    drawFieldArrows(context, width, height, originX, originY, scale, field, t)
+    drawFieldArrows(context, width, height, originX, originY, scale, field, t, perfScale)
   }
 }
 
@@ -2083,6 +2187,9 @@ function getProbeReadingLabel(
   divergence: number,
   numeric = false,
 ) {
+  if (metric === 'vector') {
+    return 'vector telemetry'
+  }
   if (numeric) {
     if (metric === 'both') {
       return `curl ${formatMetricValue(curl)} | div ${formatMetricValue(divergence)}`
@@ -2261,6 +2368,10 @@ function App() {
   const particlesRef = useRef<Particle[]>([])
   const lastFrameTimeRef = useRef<number | null>(null)
   const pointerStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const perfScaleRef = useRef(1.0)
+  const frameTimeFilteredRef = useRef(16.6)
+  const lastActiveLineCountRef = useRef(0)
+  const lastActiveParticleCountRef = useRef(0)
   const [dx, setDx] = useState(presets[0].dx)
   const [dy, setDy] = useState(presets[0].dy)
   const [colorMode, setColorMode] = useState<ColorMode>('flow')
@@ -2286,6 +2397,10 @@ function App() {
   const [probe, setProbe] = useState<ProbeState>({
     x: 0,
     y: 0,
+    fieldX: 0,
+    fieldY: 0,
+    vx: 0,
+    vy: 0,
     curl: 0,
     divergence: 0,
     visible: false,
@@ -2341,6 +2456,9 @@ function App() {
           showFieldArrows,
           showDivergenceEmphasis,
           selectedPreset?.renderHints,
+          perfScaleRef.current,
+          lastActiveLineCountRef,
+          lastActiveParticleCountRef,
         )
       }
     },
@@ -2385,12 +2503,15 @@ function App() {
 
     setSyncedPlacedProbes(
       placedProbes.map((probe) => {
+        const vel = field(probe.fieldX, probe.fieldY, t)
         const curl = calculateCurl(field, { x: probe.fieldX, y: probe.fieldY }, t)
         const divergence = calculateDivergence(field, { x: probe.fieldX, y: probe.fieldY }, t)
         return {
           ...probe,
           x: rect.left - sectionRect.left + originX + probe.fieldX * scale,
           y: rect.top - sectionRect.top + originY - probe.fieldY * scale,
+          vx: vel.x,
+          vy: vel.y,
           curl,
           divergence,
         }
@@ -2407,6 +2528,8 @@ function App() {
     tracersRef.current = []
     particlesRef.current = []
     lastFrameTimeRef.current = null
+    lastActiveLineCountRef.current = 0
+    lastActiveParticleCountRef.current = 0
   }, [field, density, seedingMode])
 
   const randomizeField = useCallback(() => {
@@ -2419,6 +2542,8 @@ function App() {
     tracersRef.current = []
     particlesRef.current = []
     lastFrameTimeRef.current = null
+    lastActiveLineCountRef.current = 0
+    lastActiveParticleCountRef.current = 0
   }, [])
 
   useEffect(() => {
@@ -2428,6 +2553,24 @@ function App() {
       const previous = lastFrameTimeRef.current ?? time
       const deltaSeconds = isPlaying ? (time - previous) / 1000 : 0
       lastFrameTimeRef.current = time
+
+      if (isPlaying && previous !== time) {
+        const frameTime = time - previous
+        const clampedFrameTime = Math.min(150, frameTime)
+        
+        // Low-pass filter to smooth frame times and filter spikes
+        frameTimeFilteredRef.current = frameTimeFilteredRef.current * 0.95 + clampedFrameTime * 0.05
+        
+        // Dynamic scaling: target 30fps (approx 33ms per frame).
+        // If frame time is consistently above 35ms (~28fps), scale quality down.
+        // If frame time is consistently below 22ms (~45fps), scale quality up.
+        if (frameTimeFilteredRef.current > 35.0) {
+          perfScaleRef.current = Math.max(0.25, perfScaleRef.current - 0.005)
+        } else if (frameTimeFilteredRef.current < 22.0) {
+          perfScaleRef.current = Math.min(1.0, perfScaleRef.current + 0.003)
+        }
+      }
+
       redraw(time, deltaSeconds)
       if (isPlaying) frame = requestAnimationFrame(tick)
     }
@@ -2435,6 +2578,8 @@ function App() {
     const handleResize = () => {
       tracersRef.current = []
       particlesRef.current = []
+      lastActiveLineCountRef.current = 0
+      lastActiveParticleCountRef.current = 0
       redraw()
       window.requestAnimationFrame(syncPositions)
     }
@@ -2489,6 +2634,8 @@ function App() {
     tracersRef.current = []
     particlesRef.current = []
     lastFrameTimeRef.current = null
+    lastActiveLineCountRef.current = 0
+    lastActiveParticleCountRef.current = 0
     redraw(performance.now(), 0.035)
   }
 
@@ -2513,6 +2660,7 @@ function App() {
     const t = performance.now() / 1000
     const curl = calculateCurl(field, fieldPoint, t)
     const divergence = calculateDivergence(field, fieldPoint, t)
+    const vel = field(fieldPoint.x, fieldPoint.y, t)
     const closestMarker = labStarted
       ? activeQuestion.markers.reduce<{
           label: string
@@ -2529,6 +2677,10 @@ function App() {
     setProbe({
       x: event.clientX - sectionRect.left,
       y: event.clientY - sectionRect.top,
+      fieldX: fieldPoint.x,
+      fieldY: fieldPoint.y,
+      vx: vel.x,
+      vy: vel.y,
       curl,
       divergence,
       visible: true,
@@ -2593,7 +2745,11 @@ function App() {
   }
 
   const primaryProbeValue =
-    activeMetric === 'divergence' ? probe.divergence : probe.curl
+    activeMetric === 'divergence'
+      ? probe.divergence
+      : activeMetric === 'vector'
+        ? Math.hypot(probe.vx, probe.vy)
+        : probe.curl
   const probeMagnitude =
     activeMetric === 'both'
       ? Math.min(4, Math.max(Math.abs(probe.curl), Math.abs(probe.divergence)))
@@ -2612,7 +2768,9 @@ function App() {
         ? probe.divergence >= 0
           ? 181
           : 23
-        : 196
+        : activeMetric === 'vector'
+          ? 265
+          : 196
   const divergenceScaleStart = probe.divergence > 0.05 ? 0.58 : probe.divergence < -0.05 ? 1.08 : 0.84
   const divergenceScaleEnd = probe.divergence > 0.05 ? 1.08 : probe.divergence < -0.05 ? 0.58 : 0.84
   const probeStyle = {
@@ -2666,6 +2824,8 @@ function App() {
     tracersRef.current = []
     particlesRef.current = []
     lastFrameTimeRef.current = null
+    lastActiveLineCountRef.current = 0
+    lastActiveParticleCountRef.current = 0
   }
 
   const selectOption = (option: string) => {
@@ -2739,6 +2899,8 @@ function App() {
     tracersRef.current = []
     particlesRef.current = []
     lastFrameTimeRef.current = null
+    lastActiveLineCountRef.current = 0
+    lastActiveParticleCountRef.current = 0
   }
 
   const goToQuestion = (index: number) => {
@@ -2763,6 +2925,8 @@ function App() {
     tracersRef.current = []
     particlesRef.current = []
     lastFrameTimeRef.current = null
+    lastActiveLineCountRef.current = 0
+    lastActiveParticleCountRef.current = 0
   }
 
   const goToNextQuestion = () => {
@@ -2981,6 +3145,24 @@ function App() {
             >
               <CompareProbeIcon />
             </button>
+            <button
+              type="button"
+              className="probe-tool-button"
+              aria-label="Vector probe"
+              aria-pressed={probeEnabled && playgroundMetric === 'vector'}
+              title="Vector probe"
+              onClick={() => {
+                if (probeEnabled && playgroundMetric === 'vector') {
+                  setProbeEnabled(false)
+                } else {
+                  setPlaygroundMetric('vector')
+                  setProbeEnabled(true)
+                }
+                hideProbe()
+              }}
+            >
+              <MoveUpRight aria-hidden="true" style={{ width: '16px', height: '16px', strokeWidth: '2.5' }} />
+            </button>
           </>
         )}
         {placedProbes.length > 0 ? (
@@ -3037,7 +3219,7 @@ function App() {
           <div
             className={`metric-probe metric-probe-${activeMetric}`}
             style={probeStyle}
-            data-reading={activeMetric === 'both' ? '' : probeLabel}
+            data-reading={activeMetric === 'both' || activeMetric === 'vector' ? '' : probeLabel}
             aria-hidden="true"
           >
             {activeMetric === 'divergence' ? (
@@ -3053,6 +3235,49 @@ function App() {
                   <em>{getDivergenceDescription(probe.divergence)}</em>
                 </span>
               </>
+            ) : activeMetric === 'vector' ? (
+              <>
+                {(() => {
+                  const angle = Math.atan2(probe.vy, probe.vx)
+                  const speed = Math.hypot(probe.vx, probe.vy)
+                  const length = Math.max(12, Math.min(45, speed * 15))
+                  return (
+                    <svg
+                      className="vector-probe-arrow"
+                      style={{ transform: `rotate(${-angle}rad)` }}
+                      width="100"
+                      height="100"
+                      viewBox="0 0 100 100"
+                    >
+                      <line
+                        x1="50"
+                        y1="50"
+                        x2={50 + length}
+                        y2="50"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                      />
+                      <polygon points={`${50 + length},50 ${50 + length - 7},46 ${50 + length - 7},54`} fill="currentColor" />
+                      <circle cx="50" cy="50" r="3.5" fill="currentColor" />
+                    </svg>
+                  )
+                })()}
+                <span className="vector-probe-readout">
+                  <span className="vector-readout-item">
+                    <strong>Pos:</strong> ({probe.fieldX.toFixed(2)}, {probe.fieldY.toFixed(2)})
+                  </span>
+                  <span className="vector-readout-item">
+                    <strong>Vel:</strong> ({probe.vx.toFixed(2)}, {probe.vy.toFixed(2)})
+                  </span>
+                  <span className="vector-readout-item">
+                    <strong>Curl:</strong> {probe.curl.toFixed(2)}
+                  </span>
+                  <span className="vector-readout-item">
+                    <strong>Div:</strong> {probe.divergence.toFixed(2)}
+                  </span>
+                </span>
+              </>
             ) : (
               <CurlProbeIcon framed={false} mirrored={probe.curl >= 0} />
             )}
@@ -3063,7 +3288,16 @@ function App() {
           const placedMagnitude =
             placed.metric === 'both'
               ? Math.min(4, Math.max(Math.abs(placed.curl), Math.abs(placed.divergence)))
-              : Math.min(4, Math.abs(placed.metric === 'divergence' ? placed.divergence : placed.curl))
+              : Math.min(
+                  4,
+                  Math.abs(
+                    placed.metric === 'divergence'
+                      ? placed.divergence
+                      : placed.metric === 'vector'
+                        ? Math.hypot(placed.vx, placed.vy)
+                        : placed.curl,
+                  ),
+                )
           const placedIntensity = Math.min(1, placedMagnitude / 4)
           const placedLabel = getProbeReadingLabel(placed.metric, placed.curl, placed.divergence)
           const placedHue =
@@ -3075,7 +3309,9 @@ function App() {
                 ? placed.divergence >= 0
                   ? 181
                   : 23
-                : 196
+                : placed.metric === 'vector'
+                  ? 265
+                  : 196
           const divScaleStart = placed.divergence > 0.05 ? 0.58 : placed.divergence < -0.05 ? 1.08 : 0.84
           const divScaleEnd = placed.divergence > 0.05 ? 1.08 : placed.divergence < -0.05 ? 0.58 : 0.84
           const placedStyle = {
@@ -3094,7 +3330,7 @@ function App() {
               key={placed.id}
               className={`metric-probe metric-probe-${placed.metric} placed-probe`}
               style={placedStyle}
-              data-reading={placed.metric === 'both' ? '' : placedLabel}
+              data-reading={placed.metric === 'both' || placed.metric === 'vector' ? '' : placedLabel}
               onClick={(e) => {
                 e.stopPropagation()
                 setPlacedProbes((current) => current.filter((p) => p.id !== placed.id))
@@ -3113,6 +3349,49 @@ function App() {
                   <span className="comparison-probe-readout">
                     <em>{getCurlDescription(placed.curl)}</em>
                     <em>{getDivergenceDescription(placed.divergence)}</em>
+                  </span>
+                </>
+              ) : placed.metric === 'vector' ? (
+                <>
+                  {(() => {
+                    const angle = Math.atan2(placed.vy, placed.vx)
+                    const speed = Math.hypot(placed.vx, placed.vy)
+                    const length = Math.max(12, Math.min(45, speed * 15))
+                    return (
+                      <svg
+                        className="vector-probe-arrow"
+                        style={{ transform: `rotate(${-angle}rad)` }}
+                        width="100"
+                        height="100"
+                        viewBox="0 0 100 100"
+                      >
+                        <line
+                          x1="50"
+                          y1="50"
+                          x2={50 + length}
+                          y2="50"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                        />
+                        <polygon points={`${50 + length},50 ${50 + length - 7},46 ${50 + length - 7},54`} fill="currentColor" />
+                        <circle cx="50" cy="50" r="3.5" fill="currentColor" />
+                      </svg>
+                    )
+                  })()}
+                  <span className="vector-probe-readout">
+                    <span className="vector-readout-item">
+                      <strong>Pos:</strong> ({placed.fieldX.toFixed(2)}, {placed.fieldY.toFixed(2)})
+                    </span>
+                    <span className="vector-readout-item">
+                      <strong>Vel:</strong> ({placed.vx.toFixed(2)}, {placed.vy.toFixed(2)})
+                    </span>
+                    <span className="vector-readout-item">
+                      <strong>Curl:</strong> {placed.curl.toFixed(2)}
+                    </span>
+                    <span className="vector-readout-item">
+                      <strong>Div:</strong> {placed.divergence.toFixed(2)}
+                    </span>
                   </span>
                 </>
               ) : (
@@ -3408,6 +3687,7 @@ function App() {
           </aside>
         )}
       </section>
+      <div className="app-version">v{__APP_VERSION__}</div>
     </main>
   )
 }
