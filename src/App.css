@@ -503,6 +503,10 @@ select {
   text-align: center;
 }
 
+.metric-probe-both::after {
+  content: none;
+}
+
 .metric-probe-curl::before,
 .metric-probe-both::before {
   animation: curl-probe-spin calc(var(--probe-duration, 1s) * 1.6) linear infinite;
@@ -563,6 +567,28 @@ select {
   border-width: 2px;
 }
 
+.comparison-probe-readout {
+  position: absolute;
+  left: 50%;
+  bottom: -26px;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 4px;
+  transform: translateX(-50%);
+}
+
+.comparison-probe-readout em {
+  padding: 2px 6px;
+  border: 1px solid hsl(var(--probe-hue) 58% 42% / 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 16px rgba(21, 44, 56, 0.12);
+  color: hsl(var(--probe-hue) 70% 30%);
+  font: 750 10px/1.2 var(--mono);
+  font-style: normal;
+  white-space: nowrap;
+}
+
 @keyframes curl-probe-spin {
   to {
     transform: rotate(360deg);
@@ -589,6 +615,29 @@ select {
     transform: scale(var(--blob-end));
     opacity: 0.8;
   }
+}
+
+.placed-probe {
+  pointer-events: auto !important;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.placed-probe:hover {
+  border-color: hsl(23 72% 40% / 0.6);
+  box-shadow:
+    0 12px 32px rgba(21, 44, 56, 0.14),
+    0 0 0 5px hsl(23 72% 40% / 0.12);
+  transform: scale(1.04);
+}
+
+.clear-probes-button:hover {
+  border-color: #f1bfb9;
+  background: #fff5f2;
+  color: #c93b16 !important;
 }
 
 .field-marker {
@@ -1229,6 +1278,68 @@ select {
 .lab-status-incorrect {
   background: #fff1ed;
   color: #9a3c27;
+}
+
+.lab-secondary-button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid #d7e3e8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #117d80;
+  font-size: 13px;
+  font-weight: 820;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lab-secondary-button:hover:not(:disabled) {
+  border-color: #9fc9cc;
+  background: #f3fbfb;
+}
+
+.lab-secondary-button:disabled {
+  border-color: #cbd9df;
+  background: #edf3f5;
+  color: #8b9aa2;
+  cursor: default;
+}
+
+.lab-secondary-button svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.3;
+}
+
+.lab-reset-all-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid #d7e3e8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #117d80;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lab-reset-all-button:hover {
+  border-color: #9fc9cc;
+  background: #f3fbfb;
+  color: #117d80;
+}
+
+.lab-reset-all-button svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.5;
 }
 
 @media (max-width: 760px) {
