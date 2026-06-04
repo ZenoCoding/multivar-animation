@@ -2349,6 +2349,28 @@ function LessonConcept({ lessonKind }: { lessonKind: LessonKind }) {
   )
 }
 
+function decodeURLParam(val: string): string {
+  if (!val) return ''
+  
+  // Clean up mangled form-urlencoded patterns (like '+++', '+*+', etc.)
+  const cleaned = val
+    .replace(/\+\+\+/g, ' + ')
+    .replace(/\+\*\+/g, ' * ')
+    .replace(/\+\/\+/g, ' / ')
+    .replace(/\+-+/g, ' - ')
+    .replace(/\+,+/g, ', ')
+    .replace(/,\+\+/g, ', + ')
+    .replace(/,\+/g, ', ')
+    .replace(/\(\+/g, '( ')
+    .replace(/\+\)/g, ' )')
+
+  try {
+    return decodeURIComponent(cleaned)
+  } catch {
+    return cleaned
+  }
+}
+
 function getInitialURLParams() {
   if (typeof window === 'undefined') {
     return {
@@ -2359,12 +2381,26 @@ function getInitialURLParams() {
       density: 100,
     }
   }
-  const params = new URLSearchParams(window.location.search)
-  const dxParam = params.get('dx')
-  const dyParam = params.get('dy')
-  const colorModeParam = params.get('colorMode')
-  const seedingModeParam = params.get('seedingMode')
-  const densityParam = params.get('density')
+
+  const query: Record<string, string> = {}
+  const search = window.location.search
+  if (search && search.charAt(0) === '?') {
+    const pairs = search.substring(1).split('&')
+    for (const pair of pairs) {
+      const eq = pair.indexOf('=')
+      if (eq !== -1) {
+        const key = pair.substring(0, eq)
+        const val = pair.substring(eq + 1)
+        query[key] = val
+      }
+    }
+  }
+
+  const dxParam = query['dx'] ? decodeURLParam(query['dx']) : null
+  const dyParam = query['dy'] ? decodeURLParam(query['dy']) : null
+  const colorModeParam = query['colorMode'] ? decodeURIComponent(query['colorMode']) : null
+  const seedingModeParam = query['seedingMode'] ? decodeURIComponent(query['seedingMode']) : null
+  const densityParam = query['density'] ? decodeURIComponent(query['density']) : null
 
   return {
     dx: dxParam !== null ? dxParam : presets[0].dx,
@@ -2619,7 +2655,7 @@ function App() {
     if (seedingMode !== 'streamlines') params.set('seedingMode', seedingMode)
     if (density !== 100) params.set('density', String(density))
 
-    const newSearch = params.toString()
+    const newSearch = params.toString().replace(/\+/g, '%20')
     const newURL = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`
     window.history.replaceState(null, '', newURL)
   }, [dx, dy, colorMode, seedingMode, density])
