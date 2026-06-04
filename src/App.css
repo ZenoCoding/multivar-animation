@@ -31,8 +31,8 @@
 }
 
 .brand svg {
-  width: 19px;
-  height: 19px;
+  width: 24px;
+  height: 24px;
   color: #158f91;
   stroke-width: 2.2;
 }
@@ -1698,8 +1698,8 @@ select {
 }
 
 .welcome-card h2 svg {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   color: #129497;
   animation: welcomeWave 2.5s ease-in-out infinite;
 }
