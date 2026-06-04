@@ -508,8 +508,8 @@ const visibleHalfRange = 4.1
 const simulationPadding = 0.9
 const simulationHalfRange = visibleHalfRange + simulationPadding
 const uniformLineSeedHalfRange = visibleHalfRange * 0.98
-const tickValues = [50, 60, 70, 80, 90, 100, 160, 220, 280, 340, 400]
-const densityMin = 50
+const tickValues = [10, 30, 50, 70, 90, 100, 160, 220, 280, 340, 400]
+const densityMin = 10
 const densityMax = 400
 const lineTracerBaseCount = {
   compact: 700,
@@ -990,12 +990,15 @@ function DivergenceProbeIcon({ framed = true }: { framed?: boolean }) {
   )
 }
 
-function CompareProbeIcon() {
+function CompareProbeIcon({ framed = true }: { framed?: boolean }) {
   return (
-    <span className="compare-tool-icon" aria-hidden="true">
-      <CurlProbeIcon framed={false} />
-      <DivergenceProbeIcon framed={false} />
-    </span>
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="compare-tool-icon-svg">
+      {framed ? <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" /> : null}
+      <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="4.0" strokeDasharray="1.5 1.5" />
+      <path d="M17.2 8.0 a6.6 6.6 0 1 0 0.8 5.6" />
+      <path d="M17.5 5.5 v2.8 h-2.8" />
+    </svg>
   )
 }
 
@@ -1227,13 +1230,14 @@ function drawParticleField(
     prepared
   const aspect = width / height
   const particleCount = particleCountForWidth(width, density)
+  const activeParticleCount = Math.round(particleCount * perfScale)
   const t = time / 1000
   const shouldReset = resized || particles.length !== particleCount
 
   if (shouldReset) {
     particles.splice(0, particles.length, ...resetParticles(particleCount, aspect))
     if (lastActiveParticleCountRef) {
-      lastActiveParticleCountRef.current = 0
+      lastActiveParticleCountRef.current = activeParticleCount
     }
   }
 
@@ -1276,7 +1280,6 @@ function drawParticleField(
   const k3 = { x: 0, y: 0 }
   const k4 = { x: 0, y: 0 }
 
-  const activeParticleCount = Math.round(particleCount * perfScale)
   const lastActiveCount = lastActiveParticleCountRef ? lastActiveParticleCountRef.current : 0
 
   context.globalCompositeOperation = 'source-over'
@@ -1741,6 +1744,7 @@ function drawVectorField(
   }
 
   const lineCount = lineCountForWidth(width, density)
+  const activeLineCount = Math.round(lineCount * perfScale)
   const shouldResetTracers = tracers.length !== lineCount
   if (shouldResetTracers) {
     tracers.splice(
@@ -1749,7 +1753,7 @@ function drawVectorField(
       ...resetTracers(lineCount, aspect, field, t, renderHints),
     )
     if (lastActiveLineCountRef) {
-      lastActiveLineCountRef.current = 0
+      lastActiveLineCountRef.current = activeLineCount
     }
   }
 
@@ -1762,7 +1766,6 @@ function drawVectorField(
   const tempV = { x: 0, y: 0 }
   const vector = { x: 0, y: 0 }
 
-  const activeLineCount = Math.round(lineCount * perfScale)
   const lastActiveCount = lastActiveLineCountRef ? lastActiveLineCountRef.current : 0
 
   const stepSeconds = Math.min(0.045, Math.max(0, deltaSeconds))
@@ -2771,13 +2774,16 @@ function App() {
         : activeMetric === 'vector'
           ? 265
           : 196
-  const divergenceScaleStart = probe.divergence > 0.05 ? 0.58 : probe.divergence < -0.05 ? 1.08 : 0.84
-  const divergenceScaleEnd = probe.divergence > 0.05 ? 1.08 : probe.divergence < -0.05 ? 0.58 : 0.84
+  const divergenceScaleStart = probe.divergence > 0.08 ? 0.32 : probe.divergence < -0.08 ? 1.08 : 0.84
+  const divergenceScaleEnd = probe.divergence > 0.08 ? 1.08 : probe.divergence < -0.08 ? 0.32 : 0.84
   const probeStyle = {
     left: `${probe.x}px`,
     top: `${probe.y}px`,
     '--probe-duration': `${Math.max(0.28, 1.7 / (0.25 + probeMagnitude))}s`,
     '--probe-direction': probe.curl >= 0 ? 'reverse' : 'normal',
+    '--probe-play-state': Math.abs(probe.curl) <= 0.08 ? 'paused' : 'running',
+    '--probe-divergence-animation': Math.abs(probe.divergence) <= 0.08 ? 'none' : 'divergence-probe-pulse',
+    '--probe-divergence-ring-animation': Math.abs(probe.divergence) <= 0.08 ? 'none' : 'divergence-probe-ring',
     '--probe-intensity': probeIntensity,
     '--probe-hue': probeHue,
     '--blob-start': divergenceScaleStart,
@@ -3064,6 +3070,8 @@ function App() {
       </header>
 
       <aside className="probe-sidebar" aria-label="Visualization tools">
+        <div className="probe-sidebar-label">Probes</div>
+        <div className="probe-sidebar-divider" />
         {labStarted ? (
           <button
             type="button"
@@ -3226,10 +3234,14 @@ function App() {
               <span className="divergence-probe-blob" />
             ) : activeMetric === 'both' ? (
               <>
-                <span className="comparison-probe-pair">
-                  <CurlProbeIcon framed={false} mirrored={probe.curl >= 0} />
-                  <span className="divergence-probe-blob" />
+                <span className="both-probe-curl-ring">
+                  <svg className="both-probe-curl-ring-svg" viewBox="0 0 100 100" width="100%" height="100%">
+                    <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" strokeWidth="0.85" strokeDasharray="1 2" />
+                    <polygon points="54,4 47,1.2 48,6.8" fill="currentColor" />
+                    <polygon points="46,96 53,93.2 52,98.8" fill="currentColor" />
+                  </svg>
                 </span>
+                <span className="divergence-probe-blob" />
                 <span className="comparison-probe-readout">
                   <em>{getCurlDescription(probe.curl)}</em>
                   <em>{getDivergenceDescription(probe.divergence)}</em>
@@ -3312,13 +3324,16 @@ function App() {
                 : placed.metric === 'vector'
                   ? 265
                   : 196
-          const divScaleStart = placed.divergence > 0.05 ? 0.58 : placed.divergence < -0.05 ? 1.08 : 0.84
-          const divScaleEnd = placed.divergence > 0.05 ? 1.08 : placed.divergence < -0.05 ? 0.58 : 0.84
+          const divScaleStart = placed.divergence > 0.08 ? 0.32 : placed.divergence < -0.08 ? 1.08 : 0.84
+          const divScaleEnd = placed.divergence > 0.08 ? 1.08 : placed.divergence < -0.08 ? 0.32 : 0.84
           const placedStyle = {
             left: `${placed.x}px`,
             top: `${placed.y}px`,
             '--probe-duration': `${Math.max(0.28, 1.7 / (0.25 + placedMagnitude))}s`,
             '--probe-direction': placed.curl >= 0 ? 'reverse' : 'normal',
+            '--probe-play-state': Math.abs(placed.curl) <= 0.08 ? 'paused' : 'running',
+            '--probe-divergence-animation': Math.abs(placed.divergence) <= 0.08 ? 'none' : 'divergence-probe-pulse',
+            '--probe-divergence-ring-animation': Math.abs(placed.divergence) <= 0.08 ? 'none' : 'divergence-probe-ring',
             '--probe-intensity': placedIntensity,
             '--probe-hue': placedHue,
             '--blob-start': divScaleStart,
@@ -3342,10 +3357,14 @@ function App() {
                 <span className="divergence-probe-blob" />
               ) : placed.metric === 'both' ? (
                 <>
-                  <span className="comparison-probe-pair">
-                    <CurlProbeIcon framed={false} mirrored={placed.curl >= 0} />
-                    <span className="divergence-probe-blob" />
+                  <span className="both-probe-curl-ring">
+                    <svg className="both-probe-curl-ring-svg" viewBox="0 0 100 100" width="100%" height="100%">
+                      <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" strokeWidth="0.85" strokeDasharray="1 2" />
+                      <polygon points="54,4 47,1.2 48,6.8" fill="currentColor" />
+                      <polygon points="46,96 53,93.2 52,98.8" fill="currentColor" />
+                    </svg>
                   </span>
+                  <span className="divergence-probe-blob" />
                   <span className="comparison-probe-readout">
                     <em>{getCurlDescription(placed.curl)}</em>
                     <em>{getDivergenceDescription(placed.divergence)}</em>

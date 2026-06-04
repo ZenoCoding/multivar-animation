@@ -388,6 +388,27 @@ select {
   backdrop-filter: blur(14px);
 }
 
+.probe-sidebar-label {
+  font-size: 8.5px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #5d6e75;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  user-select: none;
+  margin: 6px 0 4px 0;
+  align-self: center;
+}
+
+.probe-sidebar-divider {
+  width: 18px;
+  height: 1px;
+  background-color: #e2ecef;
+  margin: 2px auto 6px auto;
+}
+
 .probe-tool-button {
   width: 34px;
   height: 34px;
@@ -432,19 +453,14 @@ select {
   stroke-linejoin: round;
 }
 
-.compare-tool-icon {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 1px;
-}
-
-.compare-tool-icon .curl-tool-icon,
-.compare-tool-icon .divergence-tool-icon {
-  width: 14px;
-  height: 14px;
+.compare-tool-icon-svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .metric-probe {
@@ -511,6 +527,7 @@ select {
 .metric-probe-both::before {
   animation: curl-probe-spin calc(var(--probe-duration, 1s) * 1.6) linear infinite;
   animation-direction: var(--probe-direction, normal);
+  animation-play-state: var(--probe-play-state, running);
 }
 
 .metric-probe-curl .curl-tool-icon {
@@ -523,6 +540,7 @@ select {
   stroke-width: 1.95;
   animation: curl-probe-spin var(--probe-duration, 1s) linear infinite;
   animation-direction: var(--probe-direction, normal);
+  animation-play-state: var(--probe-play-state, running);
 }
 
 .divergence-probe-blob {
@@ -535,36 +553,34 @@ select {
   box-shadow:
     inset 0 0 0 8px rgba(255, 255, 255, 0.64),
     0 0 0 1px hsl(var(--probe-hue) 72% 38% / 0.16);
-  animation: divergence-probe-pulse var(--probe-duration, 1s) ease-in-out infinite alternate;
+  transform: scale(var(--blob-start, 0.84));
+  animation: var(--probe-divergence-animation, none) var(--probe-duration, 1s) ease-in-out infinite;
 }
 
 .metric-probe-divergence::before {
-  animation: divergence-probe-ring var(--probe-duration, 1s) ease-in-out infinite alternate;
+  transform: scale(var(--blob-start, 0.84));
+  animation: var(--probe-divergence-ring-animation, none) var(--probe-duration, 1s) ease-in-out infinite;
 }
 
-.comparison-probe-pair {
-  display: grid;
-  grid-template-columns: 28px 28px;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
+.both-probe-curl-ring {
+  position: absolute;
+  width: 96px;
+  height: 96px;
+  top: -13px;
+  left: -13px;
+  pointer-events: none;
 }
 
-.comparison-probe-pair .curl-tool-icon {
-  width: 28px;
-  height: 28px;
-  padding: 4px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: inset 0 0 0 1px hsl(var(--probe-hue) 58% 45% / 0.18);
+.both-probe-curl-ring svg {
+  width: 100%;
+  height: 100%;
+  stroke: hsl(var(--probe-hue) 72% 38% / 0.85);
+  stroke-width: 0.85;
+  stroke-dasharray: 1 2;
   animation: curl-probe-spin var(--probe-duration, 1s) linear infinite;
   animation-direction: var(--probe-direction, normal);
-}
-
-.comparison-probe-pair .divergence-probe-blob {
-  width: 26px;
-  height: 26px;
-  border-width: 2px;
+  transform-origin: center;
+  animation-play-state: var(--probe-play-state, running);
 }
 
 .comparison-probe-readout {
@@ -596,24 +612,36 @@ select {
 }
 
 @keyframes divergence-probe-pulse {
-  from {
+  0% {
     transform: scale(var(--blob-start));
+    opacity: 0;
   }
-
-  to {
+  15% {
+    opacity: 0.9;
+  }
+  85% {
+    opacity: 0.9;
+  }
+  100% {
     transform: scale(var(--blob-end));
+    opacity: 0;
   }
 }
 
 @keyframes divergence-probe-ring {
-  from {
+  0% {
     transform: scale(var(--blob-start));
-    opacity: 0.42;
+    opacity: 0;
   }
-
-  to {
+  15% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.85;
+  }
+  100% {
     transform: scale(var(--blob-end));
-    opacity: 0.8;
+    opacity: 0;
   }
 }
 
