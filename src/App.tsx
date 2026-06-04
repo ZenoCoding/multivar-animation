@@ -2413,6 +2413,38 @@ function getInitialURLParams() {
   }
 }
 
+function blendFields(
+  oldField: Field,
+  newField: Field,
+  startTime: number,
+  time: number,
+  duration = 800
+): Field {
+  const elapsed = time - startTime
+  const alpha = Math.min(1, Math.max(0, elapsed / duration))
+
+  if (alpha >= 1) {
+    return newField
+  }
+
+  const easeAlpha = alpha < 0.5
+    ? 4 * alpha * alpha * alpha
+    : 1 - Math.pow(-2 * alpha + 2, 3) / 2
+
+  return (x, y, t, out) => {
+    const vOld = oldField(x, y, t)
+    const vNew = newField(x, y, t)
+    const rx = (1 - easeAlpha) * vOld.x + easeAlpha * vNew.x
+    const ry = (1 - easeAlpha) * vOld.y + easeAlpha * vNew.y
+    if (out) {
+      out.x = rx
+      out.y = ry
+      return out
+    }
+    return { x: rx, y: ry }
+  }
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const visualizationRef = useRef<HTMLElement | null>(null)
@@ -2424,6 +2456,9 @@ function App() {
   const frameTimeFilteredRef = useRef(16.6)
   const lastActiveLineCountRef = useRef(0)
   const lastActiveParticleCountRef = useRef(0)
+  const transitionFieldOldRef = useRef<Field | null>(null)
+  const transitionStartTimeRef = useRef<number | null>(null)
+  const previousFieldRef = useRef<Field | null>(null)
   const initialParams = useMemo(() => getInitialURLParams(), [])
   const [dx, setDx] = useState(initialParams.dx)
   const [dy, setDy] = useState(initialParams.dy)
@@ -2440,7 +2475,8 @@ function App() {
   const [panelMode, setPanelMode] = useState<LabPanelMode>('intro')
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [hasSeenIntro, setHasSeenIntro] = useState(false)
-  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('vector_fields_welcome_seen'))
+  const [showWelcome, setShowWelcome] = useState(true)
+  const [welcomePage, setWelcomePage] = useState(1)
   const [isDismissing, setIsDismissing] = useState(false)
   const exploreBtnRef = useRef<HTMLButtonElement | null>(null)
 
@@ -2450,7 +2486,6 @@ function App() {
 
   const handleExplosionComplete = useCallback(() => {
     setShowWelcome(false)
-    localStorage.setItem('vector_fields_welcome_seen', 'true')
   }, [])
   const [answerRecords, setAnswerRecords] = useState<
     Record<number, AnswerRecord>
@@ -2504,12 +2539,73 @@ function App() {
     }
   }, [dx, dy, selectedPreset])
 
+  const getTransitionField = useCallback((time: number): Field => {
+    const targetField = field
+    const oldField = transitionFieldOldRef.current
+    const startTime = transitionStartTimeRef.current
+
+    if (!oldField || startTime === null) {
+      return targetField
+    }
+
+    const elapsed = time - startTime
+    const duration = 800 // 800ms morph duration
+    const alpha = Math.min(1, Math.max(0, elapsed / duration))
+
+    if (alpha >= 1) {
+      transitionFieldOldRef.current = null
+      transitionStartTimeRef.current = null
+      return targetField
+    }
+
+    const easeAlpha = alpha < 0.5
+      ? 4 * alpha * alpha * alpha
+      : 1 - Math.pow(-2 * alpha + 2, 3) / 2
+
+    return (x, y, t, out) => {
+      const vOld = oldField(x, y, t)
+      const vNew = targetField(x, y, t)
+      const rx = (1 - easeAlpha) * vOld.x + easeAlpha * vNew.x
+      const ry = (1 - easeAlpha) * vOld.y + easeAlpha * vNew.y
+      if (out) {
+        out.x = rx
+        out.y = ry
+        return out
+      }
+      return { x: rx, y: ry }
+    }
+  }, [field])
+
+  useEffect(() => {
+    if (field !== previousFieldRef.current) {
+      if (previousFieldRef.current) {
+        const now = performance.now()
+        // If already transitioning, capture the blended state at this instant;
+        // otherwise, capture the previous target field.
+        const oldActiveField =
+          transitionFieldOldRef.current && transitionStartTimeRef.current !== null
+            ? blendFields(
+                transitionFieldOldRef.current,
+                previousFieldRef.current,
+                transitionStartTimeRef.current,
+                now
+              )
+            : previousFieldRef.current
+
+        transitionFieldOldRef.current = oldActiveField
+        transitionStartTimeRef.current = now
+      }
+      previousFieldRef.current = field
+    }
+  }, [field])
+
   const redraw = useCallback(
     (time = performance.now(), deltaSeconds = 0) => {
       if (canvasRef.current) {
+        const activeField = getTransitionField(time)
         drawVectorField(
           canvasRef.current,
-          field,
+          activeField,
           colorMode,
           seedingMode,
           density,
@@ -2530,7 +2626,7 @@ function App() {
     [
       activeQuestionIndex,
       colorMode,
-      field,
+      getTransitionField,
       density,
       seedingMode,
       selectedPreset,
@@ -2550,14 +2646,16 @@ function App() {
       canvasRef.current,
     )
     const sectionRect = visualizationRef.current.getBoundingClientRect()
-    const t = performance.now() / 1000
+    const now = performance.now()
+    const t = now / 1000
+    const activeField = getTransitionField(now)
 
     if (labStarted) {
       setMarkerPositions(
         activeQuestion.markers.map((marker) => ({
           ...marker,
-          curl: calculateCurl(field, marker, t),
-          divergence: calculateDivergence(field, marker, t),
+          curl: calculateCurl(activeField, marker, t),
+          divergence: calculateDivergence(activeField, marker, t),
           left: rect.left - sectionRect.left + originX + marker.x * scale,
           top: rect.top - sectionRect.top + originY - marker.y * scale,
         })),
@@ -2568,9 +2666,9 @@ function App() {
 
     setSyncedPlacedProbes(
       placedProbes.map((probe) => {
-        const vel = field(probe.fieldX, probe.fieldY, t)
-        const curl = calculateCurl(field, { x: probe.fieldX, y: probe.fieldY }, t)
-        const divergence = calculateDivergence(field, { x: probe.fieldX, y: probe.fieldY }, t)
+        const vel = activeField(probe.fieldX, probe.fieldY, t)
+        const curl = calculateCurl(activeField, { x: probe.fieldX, y: probe.fieldY }, t)
+        const divergence = calculateDivergence(activeField, { x: probe.fieldX, y: probe.fieldY }, t)
         return {
           ...probe,
           x: rect.left - sectionRect.left + originX + probe.fieldX * scale,
@@ -2582,7 +2680,7 @@ function App() {
         }
       })
     )
-  }, [activeQuestion, field, labStarted, placedProbes])
+  }, [activeQuestion, getTransitionField, labStarted, placedProbes])
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(syncPositions)
@@ -2595,7 +2693,7 @@ function App() {
     lastFrameTimeRef.current = null
     lastActiveLineCountRef.current = 0
     lastActiveParticleCountRef.current = 0
-  }, [field, density, seedingMode])
+  }, [density, seedingMode])
 
   const randomizeField = useCallback(() => {
     const next = randomField()
@@ -2604,11 +2702,6 @@ function App() {
     setColorMode(next.colorMode ?? pick(generatedColorModes))
     setShowDivergenceEmphasis(false)
     setProbe((current) => ({ ...current, visible: false }))
-    tracersRef.current = []
-    particlesRef.current = []
-    lastFrameTimeRef.current = null
-    lastActiveLineCountRef.current = 0
-    lastActiveParticleCountRef.current = 0
   }, [])
 
   useEffect(() => {
@@ -2683,12 +2776,16 @@ function App() {
     if (!showWelcome) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        dismissWelcome()
+        if (welcomePage === 1) {
+          setWelcomePage(2)
+        } else {
+          dismissWelcome()
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [showWelcome, dismissWelcome])
+  }, [showWelcome, welcomePage, dismissWelcome])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2746,10 +2843,12 @@ function App() {
       event.clientY,
     )
     const sectionRect = visualizationRef.current.getBoundingClientRect()
-    const t = performance.now() / 1000
-    const curl = calculateCurl(field, fieldPoint, t)
-    const divergence = calculateDivergence(field, fieldPoint, t)
-    const vel = field(fieldPoint.x, fieldPoint.y, t)
+    const now = performance.now()
+    const t = now / 1000
+    const activeField = getTransitionField(now)
+    const curl = calculateCurl(activeField, fieldPoint, t)
+    const divergence = calculateDivergence(activeField, fieldPoint, t)
+    const vel = activeField(fieldPoint.x, fieldPoint.y, t)
     const closestMarker = labStarted
       ? activeQuestion.markers.reduce<{
           label: string
@@ -2913,11 +3012,6 @@ function App() {
     setHasProbeReading(Boolean(answerRecords[0]?.submitted))
     setPlacedProbes([])
     hideProbe()
-    tracersRef.current = []
-    particlesRef.current = []
-    lastFrameTimeRef.current = null
-    lastActiveLineCountRef.current = 0
-    lastActiveParticleCountRef.current = 0
   }
 
   const selectOption = (option: string) => {
@@ -2988,11 +3082,6 @@ function App() {
     setProbeEnabled(false)
     setHasProbeReading(false)
     hideProbe()
-    tracersRef.current = []
-    particlesRef.current = []
-    lastFrameTimeRef.current = null
-    lastActiveLineCountRef.current = 0
-    lastActiveParticleCountRef.current = 0
   }
 
   const goToQuestion = (index: number) => {
@@ -3014,11 +3103,6 @@ function App() {
     setHasProbeReading(Boolean(record?.submitted))
     setPlacedProbes([])
     hideProbe()
-    tracersRef.current = []
-    particlesRef.current = []
-    lastFrameTimeRef.current = null
-    lastActiveLineCountRef.current = 0
-    lastActiveParticleCountRef.current = 0
   }
 
   const goToNextQuestion = () => {
@@ -3826,7 +3910,16 @@ function App() {
       </section>
       <div className="app-version">v{__APP_VERSION__}</div>
       {showWelcome && (
-        <div className={`welcome-overlay${isDismissing ? ' welcome-dismissing' : ''}`} onClick={dismissWelcome}>
+        <div
+          className={`welcome-overlay${isDismissing ? ' welcome-dismissing' : ''}`}
+          onClick={() => {
+            if (welcomePage === 1) {
+              setWelcomePage(2)
+            } else {
+              dismissWelcome()
+            }
+          }}
+        >
           <ExplosionCanvas
             active={isDismissing}
             buttonElement={exploreBtnRef.current}
@@ -3835,39 +3928,122 @@ function App() {
             activeQuestionIndex={activeQuestionIndex}
           />
           <div className={`welcome-card${isDismissing ? ' welcome-dismissing' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="welcome-title">
-            <h2 id="welcome-title">
-              <Waves aria-hidden="true" />
-              Hello Dr. Chaudri!
-            </h2>
-            <div className="welcome-body">
-              <p className="welcome-highlight">I hope you enjoy our Multivariable Calculus final project.</p>
-              <p>
-                One of the most difficult concepts to visualize for students are vector fields. As well as divergence, curl, and all that follow. We wanted to give students a way to understand these vector fields that was both beautiful and practical. You can either use this tool with the guided lessons to build your intuition, or just enjoy the beauty of math.
-              </p>
-              <p>
-                There's lots to explore here, and we hope you enjoy using this project as much as we did creating it.
-              </p>
-            </div>
-            <div className="welcome-footer">
-              <div className="welcome-signatures">
-                — Alex, Brian, Jason, Mihir, Rakhi and Tycho
-              </div>
-              <button
-                ref={exploreBtnRef}
-                type="button"
-                className="welcome-btn"
-                onClick={dismissWelcome}
-              >
-                <span>Explore Project</span>
-                <ArrowRight aria-hidden="true" />
-              </button>
-            </div>
+            {welcomePage === 1 ? (
+              <>
+                <h2 id="welcome-title">
+                  <Waves aria-hidden="true" />
+                  Hello Dr. Chaudri!
+                </h2>
+                <div className="welcome-body">
+                  <p className="welcome-highlight">I hope you enjoy our Multivariable Calculus final project.</p>
+                  <p>
+                    One of the most difficult concepts to visualize for students are vector fields. As well as divergence, curl, and all that follow. We wanted to give students a way to understand these vector fields that was both beautiful and practical. You can either use this tool with the guided lessons to build your intuition, or just enjoy the beauty of math.
+                  </p>
+                  <p>
+                    There's lots to explore here, and we hope you enjoy using this project as much as we did creating it.
+                  </p>
+                </div>
+                <div className="welcome-footer">
+                  <div className="welcome-signatures">
+                    — Alex, Brian, Jason, Mihir, Rakhi and Tycho
+                  </div>
+                  <div className="welcome-dots">
+                    <span className="welcome-dot active" onClick={() => setWelcomePage(1)} aria-label="Page 1" />
+                    <span className="welcome-dot" onClick={() => setWelcomePage(2)} aria-label="Page 2" />
+                  </div>
+                  <button
+                    type="button"
+                    className="welcome-btn"
+                    onClick={() => setWelcomePage(2)}
+                  >
+                    <span>Next</span>
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id="welcome-title">
+                  <Sparkles aria-hidden="true" />
+                  Credits & Inspiration
+                </h2>
+                <div className="welcome-body">
+                  <p style={{ lineHeight: '1.75' }}>
+                    Credit to 3Blue1Brown for his video on{' '}
+                    <a
+                      href="https://www.youtube.com/watch?v=rB83DpBJQsE"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="welcome-chip chip-yt"
+                    >
+                      <YouTubeIcon />
+                      <span>Divergence and Curl</span>
+                    </a>{' '}
+                    and Anvaka for their simulation tool{' '}
+                    <a
+                      href="https://github.com/anvaka/fieldplay"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="welcome-chip chip-gh"
+                    >
+                      <GitHubIcon />
+                      <span>anvaka/fieldplay</span>
+                    </a>
+                    . This work is heavily inspired by their efforts.
+                  </p>
+                  <div className="welcome-team-info">
+                    <p style={{ margin: '8px 0' }}>
+                      <strong>Developer:</strong> Tycho Young
+                    </p>
+                    <p style={{ margin: '8px 0' }}>
+                      <strong>Product Design & Review:</strong> Mihir Das, Jason Lee, Brian Lin, Rakhi Pamula, and Alex Wu
+                    </p>
+                  </div>
+                </div>
+                <div className="welcome-footer">
+                  <button
+                    type="button"
+                    className="welcome-btn welcome-secondary-btn"
+                    onClick={() => setWelcomePage(1)}
+                  >
+                    <ArrowLeft aria-hidden="true" />
+                    <span>Back</span>
+                  </button>
+                  <div className="welcome-dots">
+                    <span className="welcome-dot" onClick={() => setWelcomePage(1)} aria-label="Page 1" />
+                    <span className="welcome-dot active" onClick={() => setWelcomePage(2)} aria-label="Page 2" />
+                  </div>
+                  <button
+                    ref={exploreBtnRef}
+                    type="button"
+                    className="welcome-btn"
+                    onClick={dismissWelcome}
+                  >
+                    <span>Explore Project</span>
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
     </main>
   )
 }
+
+const YouTubeIcon = () => (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style={{ color: '#FF0000', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
+    <path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.11C19.518 3.545 12 3.545 12 3.545s-7.518 0-9.388.507a3.003 3.003 0 0 0-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 0 0 2.11 2.11c1.87.507 9.388.507 9.388.507s7.518 0 9.388-.507a3.003 3.003 0 0 0 2.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837z" />
+    <polygon points="9.545 15.568 15.818 12 9.545 8.432" fill="#FFFFFF" />
+  </svg>
+)
+
+const GitHubIcon = () => (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
+    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482C19.138 20.197 22 16.44 22 12.017 22 6.484 17.522 2 12 2z" />
+  </svg>
+)
 
 interface ExplosionCanvasProps {
   active: boolean
