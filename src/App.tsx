@@ -2498,6 +2498,7 @@ function App() {
 
   const handleExplosionComplete = useCallback(() => {
     setShowWelcome(false)
+    setIsDismissing(false)
   }, [])
   const [answerRecords, setAnswerRecords] = useState<
     Record<number, AnswerRecord>
