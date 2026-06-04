@@ -48,6 +48,18 @@
   border: 1px solid #d7e3e8;
   border-radius: 7px;
   background: #ffffff;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.formula-control:hover:not(.formula-control-locked) {
+  border-color: #b1d6d9;
+}
+
+.formula-control:focus-within:not(.formula-control-locked) {
+  border-color: #9fc9cc;
+  background: #f3fbfb;
 }
 
 .formula-control span {

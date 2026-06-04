@@ -2349,6 +2349,34 @@ function LessonConcept({ lessonKind }: { lessonKind: LessonKind }) {
   )
 }
 
+function getInitialURLParams() {
+  if (typeof window === 'undefined') {
+    return {
+      dx: presets[0].dx,
+      dy: presets[0].dy,
+      colorMode: 'flow' as ColorMode,
+      seedingMode: 'streamlines' as SeedingMode,
+      density: 100,
+    }
+  }
+  const params = new URLSearchParams(window.location.search)
+  const dxParam = params.get('dx')
+  const dyParam = params.get('dy')
+  const colorModeParam = params.get('colorMode')
+  const seedingModeParam = params.get('seedingMode')
+  const densityParam = params.get('density')
+
+  return {
+    dx: dxParam !== null ? dxParam : presets[0].dx,
+    dy: dyParam !== null ? dyParam : presets[0].dy,
+    colorMode: (colorModeParam === 'flow' || colorModeParam === 'speed' || colorModeParam === 'angle' ? colorModeParam : 'flow') as ColorMode,
+    seedingMode: (seedingModeParam === 'streamlines' || seedingModeParam === 'particle' ? seedingModeParam : 'streamlines') as SeedingMode,
+    density: densityParam !== null && !isNaN(Number(densityParam))
+      ? Math.max(10, Math.min(400, Number(densityParam)))
+      : 100,
+  }
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const visualizationRef = useRef<HTMLElement | null>(null)
@@ -2360,12 +2388,13 @@ function App() {
   const frameTimeFilteredRef = useRef(16.6)
   const lastActiveLineCountRef = useRef(0)
   const lastActiveParticleCountRef = useRef(0)
-  const [dx, setDx] = useState(presets[0].dx)
-  const [dy, setDy] = useState(presets[0].dy)
-  const [colorMode, setColorMode] = useState<ColorMode>('flow')
-  const [seedingMode, setSeedingMode] = useState<SeedingMode>('streamlines')
+  const initialParams = useMemo(() => getInitialURLParams(), [])
+  const [dx, setDx] = useState(initialParams.dx)
+  const [dy, setDy] = useState(initialParams.dy)
+  const [colorMode, setColorMode] = useState<ColorMode>(initialParams.colorMode)
+  const [seedingMode, setSeedingMode] = useState<SeedingMode>(initialParams.seedingMode)
   const [showDivergenceEmphasis, setShowDivergenceEmphasis] = useState(false)
-  const [density, setDensity] = useState(100)
+  const [density, setDensity] = useState(initialParams.density)
   const [isPlaying, setIsPlaying] = useState(true)
   const [autoRandomize, setAutoRandomize] = useState(false)
   const [showFieldArrows, setShowFieldArrows] = useState(true)
@@ -2581,6 +2610,19 @@ function App() {
       window.removeEventListener('resize', handleResize)
     }
   }, [isPlaying, redraw, syncPositions])
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    params.set('dx', dx)
+    params.set('dy', dy)
+    if (colorMode !== 'flow') params.set('colorMode', colorMode)
+    if (seedingMode !== 'streamlines') params.set('seedingMode', seedingMode)
+    if (density !== 100) params.set('density', String(density))
+
+    const newSearch = params.toString()
+    const newURL = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`
+    window.history.replaceState(null, '', newURL)
+  }, [dx, dy, colorMode, seedingMode, density])
 
   useEffect(() => {
     if (!autoRandomize) return
@@ -2932,15 +2974,20 @@ function App() {
           <span>Vector Fields</span>
         </div>
 
-        <label className="formula-control formula-control-locked">
+        <label className={`formula-control${labStarted ? ' formula-control-locked' : ''}`}>
           <span>dx</span>
           <input
             value={displayedDx}
-            readOnly
-            aria-readonly="true"
+            onChange={(e) => {
+              if (!labStarted) {
+                setDx(e.target.value)
+              }
+            }}
+            readOnly={labStarted}
+            aria-readonly={labStarted}
             title={
               !labStarted
-                ? 'Current vector field'
+                ? 'Edit dx formula'
                 : fieldDetailsRevealed
                   ? 'The guided lab controls this field'
                   : 'Make a prediction before seeing the formula'
@@ -2948,15 +2995,20 @@ function App() {
           />
         </label>
 
-        <label className="formula-control formula-control-locked">
+        <label className={`formula-control${labStarted ? ' formula-control-locked' : ''}`}>
           <span>dy</span>
           <input
             value={displayedDy}
-            readOnly
-            aria-readonly="true"
+            onChange={(e) => {
+              if (!labStarted) {
+                setDy(e.target.value)
+              }
+            }}
+            readOnly={labStarted}
+            aria-readonly={labStarted}
             title={
               !labStarted
-                ? 'Current vector field'
+                ? 'Edit dy formula'
                 : fieldDetailsRevealed
                   ? 'The guided lab controls this field'
                   : 'Make a prediction before seeing the formula'
