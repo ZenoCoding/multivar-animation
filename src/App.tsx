@@ -3410,7 +3410,7 @@ function App() {
 
         <button
           type="button"
-          className="icon-button tooltip-bottom"
+          className="icon-button tooltip-bottom mobile-hidden-control"
           onClick={() => setShowDivergenceEmphasis((value) => !value)}
           aria-label={
             showDivergenceEmphasis
@@ -3474,7 +3474,7 @@ function App() {
 
         <button
           type="button"
-          className="icon-button tooltip-bottom"
+          className="icon-button tooltip-bottom mobile-hidden-control"
           onClick={resetFlow}
           aria-label="Redraw field"
           data-tooltip="Redraw field"

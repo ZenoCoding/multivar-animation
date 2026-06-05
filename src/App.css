@@ -1476,6 +1476,10 @@ select {
     flex: 1 1 0;
   }
 
+  .mobile-hidden-control {
+    display: none;
+  }
+
   .density-control {
     flex: 1 1 164px;
     justify-content: center;
@@ -2569,4 +2573,3 @@ select {
   height: 12px;
   stroke-width: 2.5;
 }
-
