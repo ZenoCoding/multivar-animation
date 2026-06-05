@@ -2,6 +2,8 @@
 
 FieldFocus is a beautiful, high-performance interactive visualizer for multivariable calculus. It allows students and instructors to see, play with, and build deep intuition for vector fields, divergence, and curl.
 
+**Live Demo:** [fieldfocus.tychoyoung.com](https://fieldfocus.tychoyoung.com)
+
 Inspired by 3Blue1Brown's visual style and Anvaka's `fieldplay` engine, FieldFocus combines sleek design aesthetics (glassmorphism, dark overlays, smooth transitions, and glowing vector streamlines) with educational rigor.
 
 ## Features
