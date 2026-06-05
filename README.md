@@ -4,6 +4,8 @@ FieldFocus is a beautiful, high-performance interactive visualizer for multivari
 
 **Live Demo:** [fieldfocus.tychoyoung.com](https://fieldfocus.tychoyoung.com)
 
+![FieldFocus Screenshot](public/fieldfocus_demo.jpg)
+
 Inspired by 3Blue1Brown's visual style and Anvaka's `fieldplay` engine, FieldFocus combines sleek design aesthetics (glassmorphism, dark overlays, smooth transitions, and glowing vector streamlines) with educational rigor.
 
 ## Features
@@ -12,7 +14,6 @@ Inspired by 3Blue1Brown's visual style and Anvaka's `fieldplay` engine, FieldFoc
 - **High-Performance Streamlines & Particles**: Render thousands of high-fps streamlines or particles moving through customizable flow dynamics.
 - **Interactive Probes**: Click and drag probes anywhere on the canvas to measure local divergence, curl, and velocity vectors in real-time.
 - **Guided Intuition Labs**: Walk through built-in interactive lessons that prompt students to make predictions, explore fields, and verify concepts.
-- **Dr. Chaudri's Welcome**: A paginated overlay greeting that introduces the app and offers a mathematical spiral streamline explosion upon dismissal.
 
 ## Tech Stack
 
