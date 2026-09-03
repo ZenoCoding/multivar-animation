@@ -4374,7 +4374,7 @@ function App() {
               <>
                 <h2 id="welcome-title">
                   <FieldFocusLogo aria-hidden="true" />
-                  Hello Dr. Chaudri!
+                  Hello Dr. Chaudhri!
                 </h2>
                 <div className="welcome-body">
                   <p className="welcome-highlight">I hope you enjoy our Multivariable Calculus final project.</p>
